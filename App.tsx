@@ -55,66 +55,60 @@ const App: React.FC = () => {
   const [newUserPassword, setNewUserPassword] = useState('');
 
  // start camera when entering scan tab
-  useEffect(() => {
-    // 只有在切換到 'scan' 分頁且掃描狀態是 IDLE 時才啟動
+   useEffect(() => {
     if (activeTab === 'scan' && scanState === ScanState.IDLE) {
-      
-      // 延遲 300ms 啟動，確保 HTML 元素 "reader" 已經長出來了
       const timeoutId = setTimeout(() => {
-        // 防止重複初始化
         if (!scannerRef.current) {
             try {
                 // @ts-ignore
                 const html5QrCode = new Html5Qrcode("reader");
                 scannerRef.current = html5QrCode;
-            } catch (e) {
-                console.error("初始化失敗", e);
-            }
+            } catch (e) { console.error("Init failed", e); }
         }
 
+        // 🔥 設定：提高解析度與對焦嘗試
         const config = { 
-            fps: 10, 
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0 
+            fps: 15, // 提高偵測頻率
+            qrbox: { width: 250, height: 250 }, // 掃描框大小
+            aspectRatio: window.innerHeight / window.innerWidth, // 配合螢幕比例
+            videoConstraints: {
+                facingMode: "environment", // 後鏡頭
+                focusMode: "continuous",   // 嘗試請求連續自動對焦 (部分手機支援)
+                width: { min: 720, ideal: 1280, max: 1920 }, // 請求高畫質 (關鍵！)
+                height: { min: 720, ideal: 1280, max: 1080 }
+            }
         };
         
-        // 關鍵：使用 facingMode: "environment" 強制使用後鏡頭
         if (!isScannerRunning.current && scannerRef.current) {
             isScannerRunning.current = true;
             scannerRef.current.start(
                 { facingMode: "environment" }, 
                 config,
                 (decodedText: string) => {
-                    // 掃描成功，呼叫下面定義的 handleScanSuccess
-                    // 注意：這裡直接呼叫可能會因為閉包問題拿到舊 state，但對於觸發事件夠用了
                     handleScanSuccess(decodedText);
                 },
                 (errorMessage: string) => {
-                    // 掃描失敗（沒掃到）是正常的，不用處理
+                    // console.log(errorMessage); // 忽略掃描過程中的錯誤
                 }
             ).catch((err: any) => {
-                console.error("相機啟動失敗", err);
+                console.error("Camera Error", err);
                 isScannerRunning.current = false;
-                setScanError("無法啟動相機，請確認權限 (請使用 Safari/Chrome)");
+                setScanError("相機啟動失敗，請確認權限或使用 Chrome/Safari");
             });
         }
       }, 300); 
 
       return () => clearTimeout(timeoutId);
     } else {
-      // 如果離開 scan 分頁，要關閉相機
+      // 關閉相機邏輯保持不變...
       if (scannerRef.current && isScannerRunning.current) {
           scannerRef.current.stop().then(() => {
               scannerRef.current.clear();
               isScannerRunning.current = false;
-          }).catch((err: any) => {
-              console.warn("停止相機失敗", err);
-              isScannerRunning.current = false;
-          });
+          }).catch((err: any) => console.warn(err));
       }
     }
     
-    // Cleanup function: 當組件卸載時，確保相機關閉
     return () => {
         if (scannerRef.current && isScannerRunning.current) {
             isScannerRunning.current = false;
@@ -123,7 +117,7 @@ const App: React.FC = () => {
             });
         }
     };
-  }, [activeTab, scanState]); 
+  }, [activeTab, scanState]);
 
 
 
@@ -377,7 +371,16 @@ const App: React.FC = () => {
             <p className="text-zinc-400 text-xs">{users.length} Accounts</p>
           </div>
           <div className="flex items-center space-x-2">
-            
+
+        {/* 🔥 新增：瀏覽器建議提示條 🔥 */}
+        <div className="mb-4 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg flex items-center gap-2">
+          <div className="w-1 h-8 bg-yellow-500 rounded-full"></div>
+          <p className="text-xs text-zinc-400 leading-tight">
+            若無法開啟相機或黑屏，請點擊右上角選單<br/>
+            選擇 <span className="text-white font-bold">「使用預設瀏覽器開啟」</span>
+          </p>
+        </div>
+
             {/* 刷新/登入按鈕 */}
             {!isEditing && (
               <button onClick={handleBatchLogin} className="w-10 h-10 bg-[#18181b] rounded-full text-zinc-300 flex items-center justify-center shadow-lg active:scale-95 transition-transform">
@@ -500,13 +503,37 @@ const App: React.FC = () => {
     }
 
     return (
-      <div className="relative h-full w-full bg-black flex flex-col">
-        {/* Camera Feed with Digital Zoom Fallback via CSS */}
-        <div className="absolute inset-0 flex items-center justify-center overflow-hidden bg-black">
-             <div id="reader" className="w-full h-full object-cover origin-center transition-transform duration-100" style={{ transform: `scale(${zoomLevel})` }}></div>
+      <div className="relative h-full w-full bg-black flex flex-col overflow-hidden">
+        
+        {/* 
+           🔥 修正：相機容器 
+           1. 加上 overflow-hidden 防止撐開頁面
+           2. 內層 video 透過 CSS class 強制覆蓋
+        */}
+        <div className="absolute inset-0 flex items-center justify-center bg-black">
+             {/* 這裡的 id="reader" 是給套件用的，我們透過 css 修正它的 style */}
+             <div 
+                id="reader" 
+                className="w-full h-full"
+                style={{
+                    // 這裡用 CSS 變焦 (Digital Zoom)
+                    transform: `scale(${zoomLevel})`,
+                    transformOrigin: 'center center',
+                    transition: 'transform 0.1s ease-out'
+                }}
+             ></div>
+             
+             {/* 強制覆寫 html5-qrcode 產生的 video 樣式，讓它填滿螢幕但不變形 */}
+             <style>{`
+                #reader video {
+                    width: 100% !important;
+                    height: 100% !important;
+                    object-fit: cover !important; /* 關鍵：像原生相機一樣填滿 */
+                }
+             `}</style>
         </div>
 
-        {/* Viewfinder UI */}
+        {/* 掃描框 UI (方框) - 保持不變，因為這是你的自定義 UI */}
         <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
             <div className={`relative w-64 h-64 border-2 ${borderColor} rounded-3xl shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]`}>
                 {scanState === ScanState.IDLE && (
@@ -518,30 +545,34 @@ const App: React.FC = () => {
         {overlay}
 
         {scanError && (
-          <div className="absolute top-20 left-6 right-6 z-40 bg-red-500/90 text-white px-4 py-3 rounded-lg shadow-xl flex items-center justify-center">
+          <div className="absolute top-20 left-6 right-6 z-40 bg-red-500/90 text-white px-4 py-3 rounded-lg shadow-xl flex items-center justify-center animate-bounce">
              <AlertTriangle size={18} className="mr-2" />
              <span className="text-sm">{scanError}</span>
           </div>
         )}
 
-        {/* Zoom Slider */}
+        {/* Zoom Slider (修正範圍 1-5) */}
         {scanState === ScanState.IDLE && (
             <div className="absolute bottom-24 left-0 right-0 z-20 px-8 flex flex-col items-center">
                 <div className="flex items-center space-x-4 w-full max-w-xs bg-black/40 backdrop-blur-md rounded-full px-4 py-2 border border-white/10">
                     <ZoomOut size={16} className="text-zinc-300" />
                     <input 
-                        type="range" min="1" max="3" step="0.1" 
+                        type="range" min="1" max="5" step="0.1"  // 🔥 修改：最大放大 5 倍
                         value={zoomLevel}
                         onChange={(e) => applyZoom(parseFloat(e.target.value))}
                         className="w-full h-1 bg-zinc-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
                     />
                     <ZoomIn size={16} className="text-zinc-300" />
                 </div>
-                <div className="mt-2 text-[10px] text-zinc-400">{zoomLevel.toFixed(1)}x</div>
+                <div className="mt-2 text-[10px] text-zinc-400 font-mono tracking-wider">
+                    {zoomLevel.toFixed(1)}x
+                </div>
             </div>
         )}
 
-        <button onClick={handleReturnHome} className="absolute top-6 right-6 p-2 bg-black/40 rounded-full text-white z-30"><X size={24} /></button>
+        <button onClick={handleReturnHome} className="absolute top-6 right-6 p-2 bg-black/40 rounded-full text-white z-30 backdrop-blur-sm active:scale-90 transition-transform">
+            <X size={24} />
+        </button>
       </div> 
     );
   };
