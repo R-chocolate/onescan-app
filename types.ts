@@ -17,6 +17,7 @@ export interface User {
   isLoggedIn: boolean; // 標記 Session 是否有效 (用於左側圓圈)
   sessionExpiry: number; // 預計的 Session 過期時間戳 (用於檢查是否要重新登入)
   lastCheckinSuccess: number; // 上次打卡成功時間戳 (用於 5 分鐘方框)
+  checkinStatus: 'SUCCESS' | 'FAILED' | null; 
 }
 
 export type Tab = 'home' | 'scan' | 'settings';

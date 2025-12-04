@@ -15,7 +15,9 @@ import {
   ZoomIn,
   ZoomOut,
   Loader2,
-  Aperture 
+  Aperture,
+  Focus,
+  Scan
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -46,7 +48,7 @@ const App: React.FC = () => {
   const initialZoomLevel = useRef<number>(1.0);
   const [tapEffect, setTapEffect] = useState<{x: number, y: number} | null>(null);
 
-  // 🔥🔥🔥 新增：硬體變焦專用 State 🔥🔥🔥
+  // 硬體變焦相關
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [zoomCap, setZoomCap] = useState<{min: number, max: number, step: number} | null>(null);
   const [isHardwareZoomSupported, setIsHardwareZoomSupported] = useState(false);
@@ -76,20 +78,20 @@ const App: React.FC = () => {
         }
 
         const config = { 
-            fps: 5,  // 低 FPS 避免卡頓
-            qrbox: { width: 250, height: 250 }, 
+            fps: 10,
+            qrbox: { width: 300, height: 300 }, 
             useBarCodeDetectorIfSupported: true,
             videoConstraints: {
                 facingMode: "environment", 
-                // 請求高解析度，這樣即使數位變焦也不會太糊
-                width: { min: 1280, ideal: 1920, max: 3840 }, 
-                height: { min: 720, ideal: 1080, max: 2160 },
+                // 請求 4K 解析度，這是解決「必須貼很近」的關鍵
+                width: { min: 1280, ideal: 3840, max: 4096 }, 
+                height: { min: 720, ideal: 2160, max: 2160 },
                 advanced: [
                     { focusMode: "continuous" },
                     { exposureMode: "continuous" },
                     { whiteBalanceMode: "continuous" },
                     // @ts-ignore
-                    { exposureCompensation: -0.5 } // 稍微降低曝光
+                    { exposureCompensation: -0.7 } // 稍微降低曝光
                 ]
             }
         };
@@ -104,7 +106,6 @@ const App: React.FC = () => {
                 },
                 (errorMessage: string) => { }
             ).then(() => {
-                // 🔥🔥🔥 成功啟動後，檢查硬體變焦能力 🔥🔥🔥
                 setTimeout(() => {
                     try {
                         const videoElement = document.querySelector("#reader video") as HTMLVideoElement;
@@ -126,20 +127,15 @@ const App: React.FC = () => {
                                     step: capabilities.zoom.step
                                 });
                                 // @ts-ignore
-                                setZoomLevel(capabilities.zoom.min); // 重置為最小
-                            } else {
-                                console.log("Hardware zoom not supported");
-                                setIsHardwareZoomSupported(false);
+                                setZoomLevel(capabilities.zoom.min);
                             }
                         }
-                    } catch (e) {
-                        console.error("Failed to get camera capabilities", e);
-                    }
-                }, 500); // 延遲一下確保軌道已就緒
+                    } catch (e) {}
+                }, 500);
             }).catch((err: any) => {
                 console.error("Camera Error", err);
                 isScannerRunning.current = false;
-                setScanError("相機啟動失敗，請允許權限");
+                setScanError("相機啟動失敗");
             });
         }
       }, 300); 
@@ -150,7 +146,7 @@ const App: React.FC = () => {
           scannerRef.current.stop().then(() => {
               scannerRef.current.clear();
               isScannerRunning.current = false;
-              setIsHardwareZoomSupported(false); // 重置
+              setIsHardwareZoomSupported(false);
           }).catch((err: any) => console.warn(err));
       }
     }
@@ -167,8 +163,10 @@ const App: React.FC = () => {
 
   // -- Actions --
   const handleToggleUser = (id: string) => {
+    // 點擊時，如果已經有打卡結果 (checkinStatus)，要清空它以便重新選擇？
+    // 或者我們保持單純：點擊就是切換 isSelected
     setUsers(prev => prev.map(u => 
-      u.id === id ? { ...u, isSelected: !u.isSelected } : u
+      u.id === id ? { ...u, isSelected: !u.isSelected, checkinStatus: null } : u
     ));
   };
 
@@ -187,12 +185,14 @@ const App: React.FC = () => {
     if (!newUserId.trim()) return;
     const newUser: User = {
       id: newUserId, name: newUserId, password: newUserPassword,
-      role: 'Guest', status: UserStatus.PENDING, isSelected: true, isLoggedIn: false, sessionExpiry: 0, lastCheckinSuccess: 0
+      role: 'Guest', status: UserStatus.PENDING, isSelected: true, isLoggedIn: false, sessionExpiry: 0, lastCheckinSuccess: 0,
+      checkinStatus: null // 預設無打卡狀態
     };
     setUsers(prev => [...prev, newUser]); 
     setShowAddModal(false);
   };
   
+  // 強制登入 (右上角)
   const handleBatchLogin = async () => {
     const usersToLogin = users.filter(u => !u.isLoggedIn || u.status === UserStatus.FAILED || u.status === UserStatus.PENDING);
     if (usersToLogin.length === 0) {
@@ -207,7 +207,14 @@ const App: React.FC = () => {
             const result = response.results.find(r => r.id === u.id);
             if (result) {
                 const isSuccess = result.status === 'SUCCESS';
-                return { ...u, status: isSuccess ? UserStatus.SUCCESS : UserStatus.FAILED, isLoggedIn: isSuccess, sessionExpiry: isSuccess ? Date.now() + 1000 * 60 * 30 : 0, message: result.message };
+                return { 
+                  ...u, 
+                  status: isSuccess ? UserStatus.SUCCESS : UserStatus.FAILED, 
+                  isLoggedIn: isSuccess, 
+                  sessionExpiry: isSuccess ? Date.now() + 1000 * 60 * 30 : 0, 
+                  message: result.message,
+                  checkinStatus: null // 登入時清空打卡狀態
+                };
             }
             return u;
         }));
@@ -217,6 +224,7 @@ const App: React.FC = () => {
     }
   };
 
+  // 下拉刷新 (檢查狀態)
   const handleCheckStatus = async () => {
     const loggedInUsers = users.filter(u => u.isLoggedIn);
     if (loggedInUsers.length === 0) {
@@ -233,7 +241,12 @@ const App: React.FC = () => {
             const result = response.results.find(r => r.id === u.id);
             if (result) {
                 const isSuccess = result.status === 'SUCCESS';
-                return { ...u, status: isSuccess ? UserStatus.SUCCESS : UserStatus.FAILED, isLoggedIn: isSuccess, message: isSuccess ? '狀態正常' : '憑證過期' };
+                return { 
+                  ...u, 
+                  status: isSuccess ? UserStatus.SUCCESS : UserStatus.FAILED, 
+                  isLoggedIn: isSuccess, 
+                  message: isSuccess ? '狀態正常' : '憑證過期' 
+                };
             }
             return u;
         }));
@@ -247,12 +260,13 @@ const App: React.FC = () => {
   
   const toggleSelectAll = () => {
     const allSelected = users.length > 0 && users.every(u => u.isSelected);
-    setUsers(prev => prev.map(u => ({ ...u, isSelected: !allSelected })));
+    setUsers(prev => prev.map(u => ({ ...u, isSelected: !allSelected, checkinStatus: null })));
   };
 
   const toggleEditMode = () => setIsEditing(!isEditing);
 
   const handleReturnHome = () => {
+    // 這裡我們只取消 isSelected，但保留 checkinStatus (綠勾/紅叉) 讓使用者看結果
     setUsers(prev => prev.map(u => ({ ...u, isSelected: false }))); 
     setScanState(ScanState.IDLE);
     setScanError(null);
@@ -272,23 +286,36 @@ const App: React.FC = () => {
       setTimeout(() => setScanError(null), 2000);
       return;
     }
+    
     try { if (scannerRef.current) scannerRef.current.pause(); } catch (e) {}
     setScanError(null);
     setScanState(ScanState.PROCESSING);
-    setUsers(prev => prev.map(u => u.isSelected ? { ...u, status: UserStatus.PROCESSING, message: '打卡中...' } : u));
+    
+    // 顯示「打卡中」，但不要改變 status (登入狀態)
+    setUsers(prev => prev.map(u => u.isSelected ? { ...u, message: '打卡中...' } : u));
+
     try {
         const response = await apiCheckinBatch(apiEndpoint, decodedText, selectedUsers.map(u => ({ id: u.id, password: u.password })));
+        
         setUsers(prev => prev.map(u => {
           const result = response.results.find(r => r.id === u.id);
           if (result) {
               const isSuccess = result.status === 'SUCCESS';
-              return { ...u, status: isSuccess ? UserStatus.SUCCESS : UserStatus.FAILED, message: result.message, lastCheckinSuccess: isSuccess ? Date.now() : u.lastCheckinSuccess };
+              // 🔥 重點：只更新 checkinStatus，不要碰 status (左側圓圈)
+              return { 
+                  ...u, 
+                  checkinStatus: isSuccess ? 'SUCCESS' : 'FAILED', // 更新方框顏色
+                  message: result.message, 
+                  lastCheckinSuccess: isSuccess ? Date.now() : u.lastCheckinSuccess 
+              };
           }
           return u;
         }));
+
         const failedCount = response.results.filter(r => r.status === 'FAILED').length;
         let finalState = failedCount === 0 ? ScanState.RESULT_SUCCESS : ScanState.RESULT_PARTIAL;
         setScanState(finalState);
+        
         if (finalState === ScanState.RESULT_SUCCESS || finalState === ScanState.RESULT_PARTIAL) {
             setTimeout(() => {
                 setScanState(ScanState.IDLE);
@@ -296,17 +323,14 @@ const App: React.FC = () => {
             }, 3000);
         }
     } catch (e) {
-        setUsers(prev => prev.map(u => u.isSelected ? { ...u, status: UserStatus.FAILED, message: '請求失敗' } : u));
+        setUsers(prev => prev.map(u => u.isSelected ? { ...u, checkinStatus: 'FAILED', message: '請求失敗' } : u));
         setScanError("API 請求錯誤");
         setScanState(ScanState.IDLE);
     }
   };
 
-  // 🔥🔥🔥 核心修正：真正的硬體變焦 🔥🔥🔥
   const applyZoom = (value: number) => {
     setZoomLevel(value);
-    
-    // 1. 如果支援硬體變焦，直接控制 Video Track
     if (isHardwareZoomSupported) {
         try {
             const videoElement = document.querySelector("#reader video") as HTMLVideoElement;
@@ -342,12 +366,20 @@ const App: React.FC = () => {
                 : null;
             if (!track) return;
             
+            // 強制重置對焦與曝光
             const constraints = { advanced: [] };
              // @ts-ignore
-            constraints.advanced.push({ focusMode: 'continuous' });
-             // @ts-ignore
-            constraints.advanced.push({ exposureMode: 'continuous' });
-            track.applyConstraints(constraints).catch((err: any) => console.log("Refocus failed", err));
+            constraints.advanced.push({ focusMode: 'manual', exposureMode: 'manual' });
+            
+            track.applyConstraints(constraints).then(() => {
+                setTimeout(() => {
+                     const autoConstraints = { advanced: [] };
+                     // @ts-ignore
+                     autoConstraints.advanced.push({ focusMode: 'continuous', exposureMode: 'continuous' });
+                     track.applyConstraints(autoConstraints);
+                }, 100);
+            }).catch((err: any) => console.log("Refocus failed", err));
+
         } catch (e) {}
     }
   };
@@ -370,15 +402,10 @@ const App: React.FC = () => {
           const currentDist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
           const scaleFactor = currentDist / initialPinchDistance.current;
           
-          // 計算新的 Zoom 值 (根據硬體範圍)
           let delta = (scaleFactor - 1) * 2;
-          if (zoomCap) {
-              // 根據硬體步進調整
-              delta = delta * (zoomCap.max - zoomCap.min) * 0.5;
-          }
+          if (zoomCap) delta = delta * (zoomCap.max - zoomCap.min) * 0.5;
           
           let newZoom = initialZoomLevel.current + delta;
-          // 限制範圍
           const max = zoomCap ? zoomCap.max : 5;
           const min = zoomCap ? zoomCap.min : 1;
           newZoom = Math.min(Math.max(newZoom, min), max);
@@ -399,7 +426,6 @@ const App: React.FC = () => {
     setPullDistance(0);
   };
 
-  // -- Render Views --
   const renderHome = () => {
     const selectedCount = users.filter(u => u.isSelected).length;
     const allSelected = users.length > 0 && users.every(u => u.isSelected);
@@ -427,14 +453,14 @@ const App: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center justify-between mb-4 px-1">
-              <h2 className="text-xs font-semibold text-zinc-500 uppercase">帳號列表 / 狀態</h2>
+              <h2 className="text-xs font-semibold text-zinc-500 uppercase">帳號列表 / 登入狀態</h2>
               {!isEditing && users.length > 0 && <div className="flex items-center gap-3"><span className="text-xs text-zinc-500 font-medium">{selectedCount} Selected</span><button onClick={toggleSelectAll} className="flex items-center space-x-2 text-xs group"><span className="text-zinc-400 group-hover:text-zinc-200 transition-colors">全選</span><div className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center transition-colors ${allSelected ? 'bg-blue-500 border-blue-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>{allSelected && <Check size={12} className="text-white" />}</div></button></div>}
             </div>
             <div className="flex flex-col gap-2">
               {users.length === 0 ? <div className="text-center py-20 text-zinc-600 border-2 border-dashed border-zinc-800 rounded-xl"><p className="text-lg mb-2">👋 Welcome to OneScan</p><p className="text-sm">點擊右上角的 + 新增同學帳號</p></div> : users.map(user => <UserRow key={user.id} user={user} isEditing={isEditing} onToggle={handleToggleUser} onDelete={handleDeleteUser} />)}
             </div>
         </div>
-        {showAddModal && <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"><div className="bg-[#18181b] border border-zinc-700 w-full max-w-sm rounded-2xl p-6 shadow-2xl"><h2 className="text-xl font-bold text-white mb-4">新增帳號</h2><form onSubmit={handleConfirmAddUser} className="space-y-4"><div><label className="block text-xs text-zinc-400 mb-1">Account / 學號</label><input type="text" value={newUserId} onChange={e => setNewUserId(e.target.value)} className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="例如：D1234567" autoFocus /></div><div><label className="block text-xs text-zinc-400 mb-1">Password</label><input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••" /></div><div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 rounded-xl bg-zinc-800 text-zinc-300">取消</button><button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold">新增</button></div></form></div></div>}
+        {showAddModal && <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"><div className="bg-[#18181b] border border-zinc-700 w-full max-w-sm rounded-2xl p-6 shadow-2xl"><h2 className="text-xl font-bold text-white mb-4">新增帳號</h2><form onSubmit={handleConfirmAddUser} className="space-y-4"><div><label className="block text-xs text-zinc-400 mb-1">Account / NID帳號</label><input type="text" value={newUserId} onChange={e => setNewUserId(e.target.value)} className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="例如：D1234567" autoFocus /></div><div><label className="block text-xs text-zinc-400 mb-1">Password / NID密碼</label><input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••" /></div><div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 rounded-xl bg-zinc-800 text-zinc-300">取消</button><button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold">新增</button></div></form></div></div>}
       </div>
     );
   };
@@ -455,10 +481,7 @@ const App: React.FC = () => {
             className="absolute inset-0 flex items-center justify-center bg-black touch-none"
             onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
         >
-             {/* 🔥 移除 transform: scale()，改用 video CSS object-fit */}
              <div id="reader" className="w-full h-full"></div>
-             
-             {/* 確保 Video 填滿，但不放大 Div */}
              <style>{`
                 #reader video {
                     width: 100% !important;
@@ -469,7 +492,15 @@ const App: React.FC = () => {
         </div>
 
         {overlay}
-        {tapEffect && <div className="absolute w-16 h-16 border-2 border-yellow-400 rounded-full animate-[ping_0.5s_ease-out_forwards] pointer-events-none z-30 flex items-center justify-center" style={{ left: tapEffect.x - 32, top: tapEffect.y - 32 }}><div className="w-1 h-1 bg-yellow-400 rounded-full"></div></div>}
+        {tapEffect && (
+            <div 
+                className="absolute w-20 h-20 border-2 border-yellow-400 rounded-full animate-[ping_0.5s_ease-out_forwards] pointer-events-none z-30 flex items-center justify-center"
+                style={{ left: tapEffect.x - 40, top: tapEffect.y - 40 }}
+            >
+                <Focus size={24} className="text-yellow-400 opacity-80" />
+            </div>
+        )}
+        
         {scanError && <div className="absolute top-20 left-6 right-6 z-40 bg-red-500/90 text-white px-4 py-3 rounded-lg shadow-xl flex items-center justify-center animate-bounce"><AlertTriangle size={18} className="mr-2" /><span className="text-sm">{scanError}</span></div>}
 
         {scanState === ScanState.IDLE && (
@@ -478,7 +509,6 @@ const App: React.FC = () => {
                     <ZoomOut size={16} className="text-zinc-300" />
                     <input 
                         type="range" 
-                        // 🔥 使用硬體回報的範圍，如果沒有就預設 1-5 但禁用
                         min={zoomCap ? zoomCap.min : 1} 
                         max={zoomCap ? zoomCap.max : 5} 
                         step={zoomCap ? zoomCap.step : 0.1}
@@ -489,11 +519,11 @@ const App: React.FC = () => {
                     />
                     <ZoomIn size={16} className="text-zinc-300" />
                 </div>
-                <div className="mt-2 flex items-center space-x-1 opacity-60">
-                     <Aperture size={12} className="text-zinc-400" />
-                     <p className="text-[10px] text-zinc-400">
-                        {isHardwareZoomSupported ? `變焦 ${zoomLevel.toFixed(1)}x` : '此裝置不支援硬體變焦'}
-                     </p>
+                <div className="mt-2 flex flex-col items-center space-y-1 opacity-80">
+                     <div className="flex items-center space-x-1">
+                        <Scan size={12} className="text-yellow-400" />
+                        <p className="text-[10px] text-yellow-100 font-medium">貼士：使用音量鍵或雙指可快速縮放</p>
+                     </div>
                 </div>
             </div>
         )}
