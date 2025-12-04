@@ -78,19 +78,20 @@ const App: React.FC = () => {
         }
 
         const config = { 
-            fps: 10,
+            fps: 15, // 稍微提高一點 FPS
             qrbox: { width: 300, height: 300 }, 
-            useBarCodeDetectorIfSupported: true,
+            useBarCodeDetectorIfSupported: true, // 這是關鍵，盡量使用原生掃描器
             videoConstraints: {
                 facingMode: "environment", 
-                width: { min: 1280, ideal: 3840, max: 4096 }, // 4K 支援
-                height: { min: 720, ideal: 2160, max: 2160 },
+                // 強制要求高解析度，這樣放大時才會有細節
+                width: { min: 1920, ideal: 3840, max: 4096 }, 
+                height: { min: 1080, ideal: 2160, max: 2160 },
+                aspectRatio: 1.777777778, // 16:9，避免切邊
                 advanced: [
                     { focusMode: "continuous" },
                     { exposureMode: "continuous" },
-                    { whiteBalanceMode: "continuous" },
-                    // @ts-ignore
-                    { exposureCompensation: -0.7 } 
+                    { whiteBalanceMode: "continuous" }
+                    // 移除 exposureCompensation，避免預設就過暗或過亮
                 ]
             }
         };
@@ -370,18 +371,17 @@ const App: React.FC = () => {
                 : null;
             if (!track) return;
             
-            const constraints = { advanced: [] };
-             // @ts-ignore
-            constraints.advanced.push({ focusMode: 'manual', exposureMode: 'manual' });
+            // 修正：不要切換 exposureMode 到 manual，這會導致過曝
+            // 策略：嘗試重新套用 focusMode: continuous。
+            // 許多瀏覽器在重新套用此 constraint 時會觸發一次重新對焦/測光運算
+            const constraints = { 
+                advanced: [{ focusMode: 'continuous', exposureMode: 'continuous' }] 
+            };
             
-            track.applyConstraints(constraints).then(() => {
-                setTimeout(() => {
-                     const autoConstraints = { advanced: [] };
-                     // @ts-ignore
-                     autoConstraints.advanced.push({ focusMode: 'continuous', exposureMode: 'continuous' });
-                     track.applyConstraints(autoConstraints);
-                }, 100);
-            }).catch((err: any) => console.log("Refocus failed", err));
+            // @ts-ignore
+            track.applyConstraints(constraints).catch(err => {
+                console.log("Focus trigger failed", err);
+            });
 
         } catch (e) {}
     }
@@ -425,7 +425,13 @@ const App: React.FC = () => {
     else setPullDistance(0);
   };
   const handlePullEnd = () => {
-    if (pullDistance > 60) { setIsRefreshing(true); handleCheckStatus(); } 
+    if (pullDistance > 80) { //稍微增加觸發距離，避免誤觸
+        setIsRefreshing(true); 
+        
+        // 修改：直接刷新瀏覽器頁面
+        // 這會重新載入最新的部署內容，且 React 重新 mount 後會自動讀取 storage
+        window.location.reload(); 
+    } 
     setPullDistance(0);
   };
 
