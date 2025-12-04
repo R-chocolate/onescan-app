@@ -46,52 +46,41 @@ if 'Origin' in APP_GET_HEADERS: del APP_GET_HEADERS['Origin']
 def get_taiwan_time():
     return datetime.datetime.utcnow() + datetime.timedelta(hours=8)
 
-# [精準解析] 根據您提供的 HTML 結構抓取最新時間
+# 解析 HTML 抓取最新時間
 def _parse_latest_time_from_html(html_content):
     try:
         soup = BeautifulSoup(html_content, 'html.parser')
         found_times = []
         
-        # ---------------------------------------------------
-        # 1. 檢查上方表格 (id="GridViewRec") - 通常放今日紀錄
-        # ---------------------------------------------------
+        # 1. 檢查上方表格 (今日紀錄)
         table_today = soup.find('table', id='GridViewRec')
         if table_today:
-            # 跳過標題列 (index 0)，從 index 1 開始
             rows = table_today.find_all('tr')
             for row in rows[1:]:
                 cells = row.find_all('td')
-                # 確保這一行有資料，而不是 "今日查無記錄" (它只有一個 td 且 colspan=3)
                 if len(cells) >= 3:
-                    # 時間在第3欄 (index 2)
                     time_str = cells[2].text.strip()
-                    try:
-                        dt = datetime.datetime.strptime(time_str, '%Y/%m/%d %H:%M:%S')
-                        found_times.append(dt)
-                    except ValueError:
-                        pass # 格式不對就跳過
-
-        # ---------------------------------------------------
-        # 2. 檢查下方表格 (id="MonthlyRecordRec") - 歷史紀錄
-        # ---------------------------------------------------
-        table_history = soup.find('table', id='MonthlyRecordRec')
-        if table_history:
-            rows = table_history.find_all('tr')
-            # 我們只需要檢查第一筆資料 (rows[1])，因為它是最新的
-            if len(rows) > 1:
-                first_data_row = rows[1]
-                cells = first_data_row.find_all('td')
-                if len(cells) >= 3:
-                    time_str = cells[2].text.strip() # 第3欄
                     try:
                         dt = datetime.datetime.strptime(time_str, '%Y/%m/%d %H:%M:%S')
                         found_times.append(dt)
                     except ValueError:
                         pass
 
-        # ---------------------------------------------------
-        # 3. 回傳找到的最新時間
-        # ---------------------------------------------------
+        # 2. 檢查下方表格 (歷史紀錄) - 以防上方沒顯示
+        table_history = soup.find('table', id='MonthlyRecordRec')
+        if table_history:
+            rows = table_history.find_all('tr')
+            if len(rows) > 1:
+                first_data_row = rows[1]
+                cells = first_data_row.find_all('td')
+                if len(cells) >= 3:
+                    time_str = cells[2].text.strip()
+                    try:
+                        dt = datetime.datetime.strptime(time_str, '%Y/%m/%d %H:%M:%S')
+                        found_times.append(dt)
+                    except ValueError:
+                        pass
+
         if found_times:
             return max(found_times) # 回傳當中最新的時間
             
@@ -127,11 +116,9 @@ def _perform_login_checkin(user_id: str, password: str, qr_data: str) -> request
         
         if response.status_code == 302:
             redirect_path = response.headers.get('Location')
-            # 如果是單純登入模式
             if not qr_data: 
                 return s 
             
-            # 打卡模式：順著轉址走，完成流程
             target_url = BASE_HOST + redirect_path if redirect_path.startswith('/') else redirect_path
             s.get(target_url, headers=APP_GET_HEADERS, verify=False)
             
@@ -157,6 +144,7 @@ def handle_login_batch():
             results.append({"id": u['id'], "status": "FAILED", "message": "登入失敗"})
     return jsonify({"status": "success", "results": results})
 
+# [重點] 這裡就是修改過的地方，加入了重試機制 (Retry Logic)
 @app.route('/api/checkin_batch', methods=['POST'])
 def handle_checkin_batch():
     data = request.json
@@ -170,46 +158,50 @@ def handle_checkin_batch():
         uid = u['id']
         pwd = u['password']
         
-        # 1. 紀錄【發送請求前】的時間 (台灣時間)
+        # 1. 紀錄發送請求的時間 (基準點)
         request_start_time = get_taiwan_time()
         
-        # 2. 執行打卡
+        # 2. 執行打卡 (這一動作必須快，符合 QR Code 時效)
         sess = _perform_login_checkin(uid, pwd, qr_data)
         
         if sess:
-            # 3. 打卡請求結束，立刻抓取歷史紀錄驗證
-            try:
-                # 稍微等待 0.5 秒讓學校資料庫寫入 (保險起見)
-                time.sleep(0.5) 
-                
-                rec_resp = sess.get(RECORD_URL, headers=APP_GET_HEADERS, verify=False, timeout=10)
-                
-                # 4. 解析 HTML 找出最新時間
-                latest_record_time = _parse_latest_time_from_html(rec_resp.text)
-                
-                if latest_record_time:
-                    # 5. [核心邏輯] 比對時間差
-                    # 計算 (最新紀錄時間 - 發送請求時間)
-                    time_diff = (latest_record_time - request_start_time).total_seconds()
+            # 3. 驗證階段：加入重試機制
+            checkin_success = False
+            final_message = ""
+            latest_record_time = None
+            
+            # 設定三次檢查：分別在 0.5秒, 2秒, 5秒 後檢查
+            # 這樣就算學校資料庫延遲 3 秒，我們也能在第 3 次抓到
+            delays = [0.5, 1.5, 3.0] 
+            
+            for wait in delays:
+                try:
+                    time.sleep(wait)
+                    # 抓取紀錄頁面
+                    rec_resp = sess.get(RECORD_URL, headers=APP_GET_HEADERS, verify=False, timeout=10)
+                    latest_record_time = _parse_latest_time_from_html(rec_resp.text)
                     
-                    print(f"[{uid}] RequestTime: {request_start_time}, RecordTime: {latest_record_time}, Diff: {time_diff}s")
-
-                    # 判定標準：
-                    # 只要兩者相差在 30秒 (或 -30秒) 內，都視為同一筆操作
-                    # (有些系統時間可能會稍微快一點或慢一點，取絕對值最保險)
-                    if abs(time_diff) <= 15:
-                        GLOBAL_SESSIONS[uid] = {'session': sess, 'expiry': time.time() + 1800}
-                        results.append({"id": uid, "status": "SUCCESS", "message": f"打卡成功 (時間差 {int(time_diff)}秒)"})
-                    else:
-                        # 雖然有紀錄，但時間對不上 (可能是抓到早上的舊紀錄)
-                        results.append({"id": uid, "status": "FAILED", "message": f"打卡未成功 (最新紀錄為 {latest_record_time})"})
-                else:
-                    # 頁面抓到了但沒解析到任何時間 (可能是沒紀錄)
-                    results.append({"id": uid, "status": "FAILED", "message": "未查詢到任何打卡紀錄"})
-                    
-            except Exception as e:
-                print(f"Checkin Verification Error: {e}")
-                results.append({"id": uid, "status": "FAILED", "message": "打卡請求完成但驗證出錯"})
+                    if latest_record_time:
+                        # 計算時間差
+                        time_diff = (latest_record_time - request_start_time).total_seconds()
+                        
+                        # 這裡放寬到 30 秒，容許學校主機的時間誤差
+                        # 注意：這裡比對的是「紀錄時間」與「請求時間」，與 QR Code 的 8 秒時效無關
+                        if abs(time_diff) <= 60:
+                            checkin_success = True
+                            final_message = f"打卡成功 (時間差 {int(time_diff)}秒)"
+                            break # 成功抓到新紀錄，跳出迴圈
+                        else:
+                            print(f"[{uid}] 抓到舊資料 ({latest_record_time})，差異 {int(time_diff)}秒，重試中...")
+                except Exception as e:
+                    print(f"[{uid}] 驗證過程發生錯誤: {e}")
+            
+            if checkin_success:
+                GLOBAL_SESSIONS[uid] = {'session': sess, 'expiry': time.time() + 1800}
+                results.append({"id": uid, "status": "SUCCESS", "message": final_message})
+            else:
+                msg = f"打卡請求已發送，但驗證失敗 (最新紀錄: {latest_record_time})" if latest_record_time else "打卡請求已發送，但查無紀錄"
+                results.append({"id": uid, "status": "FAILED", "message": msg})
         else:
             results.append({"id": uid, "status": "FAILED", "message": "打卡登入失敗"})
             

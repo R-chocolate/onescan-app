@@ -581,7 +581,7 @@ const qrScannerRef = useRef<QrScanner | null>(null); // 用來存放掃描器實
                 <div className="mt-2 flex flex-col items-center space-y-1 opacity-80">
                      <div className="flex items-center space-x-1">
                         <Scan size={12} className="text-yellow-400" />
-                        <p className="text-[10px] text-yellow-100 font-medium">使用雙指可快速縮放</p>
+                        <p className="text-[10px] text-yellow-100 font-medium">雙指可快速縮放</p>
                      </div>
                 </div>
             </div>

@@ -128,7 +128,7 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
         {isEditing ? (
           <button 
             onClick={(e) => { e.stopPropagation(); onDelete(user.id); }}
-            className="w-8 h-8 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center"
+            className="w-8 h-8 bg-red-500/20 text-red-600 rounded-full flex items-center justify-center"
           >
             <Trash2Icon size={15} />
           </button>
@@ -136,7 +136,7 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
           <div 
             onClick={(e) => { e.stopPropagation(); onToggle(user.id); }}
             className={`w-11 h-6 rounded-full p-1 transition-colors cursor-pointer relative ${
-                user.isSelected ? 'bg-green-500/85' : 'bg-red-500/85'
+                user.isSelected ? 'bg-green-500/90' : 'bg-red-500/90'
             }`}
           >
             <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform duration-200 ${
