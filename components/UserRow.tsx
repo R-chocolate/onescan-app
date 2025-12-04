@@ -42,13 +42,13 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
         return <Loader2 className="w-5 h-5 text-yellow-500 animate-spin" />;
       case UserStatus.SUCCESS:
         return (
-          <div className="w-5 h-5 border-2 border-green-500/80 rounded-full flex items-center justify-center">
+          <div className="w-5 h-5 border-2 border-green-500/90 rounded-full flex items-center justify-center">
             <Check className="w-3 h-3 text-green-500/90" />
           </div> 
         );
       case UserStatus.FAILED:
         return (
-          <div className="w-5 h-5 border-2 border-red-500/80 rounded-full flex items-center justify-center">
+          <div className="w-5 h-5 border-2 border-red-500/90 rounded-full flex items-center justify-center">
             <X className="w-3 h-3 text-red-500/90" />
           </div>
         );
