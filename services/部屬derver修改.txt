@@ -1,0 +1,111 @@
+太棒了！能夠多帳號登入，代表你的後端邏輯已經非常穩健，處理 Session 和 Cookie 的機制也沒問題。
+
+要把這個後端從「你的電腦 (Localhost)」搬到「雲端 (Cloud)」，讓大家隨時隨地都能用，你需要做 4 個關鍵的準備。我幫你整理成筆記，你先存下來，之後要部屬時照著做就不會慌。
+
+📝 雲端部屬準備清單
+1. 修改 server.py 的啟動方式 (Port 設定)
+
+雲端平台（如 Render, Railway, Heroku）不會讓你固定用 5000 port，它們會動態分配一個 Port 給你。
+
+請修改 server.py 最下面的啟動區塊：
+
+原本的：
+
+code
+Python
+download
+content_copy
+expand_less
+if __name__ == '__main__':
+    print("🚀 學校打卡後端已啟動...")
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
+修改後 (雲端通用版)：
+
+code
+Python
+download
+content_copy
+expand_less
+import os # 記得在最上面 import os
+
+# ... 中間省略 ...
+
+if __name__ == '__main__':
+    # 獲取雲端環境變數裡的 PORT，如果沒有(例如在本機跑)就預設用 5000
+    port = int(os.environ.get("PORT", 5000))
+    
+    print(f"🚀 學校打卡後端已啟動，監聽 Port: {port}")
+    
+    # ⚠️ 注意：debug=False 在正式環境比較安全
+    app.run(host='0.0.0.0', port=port, debug=False)
+2. 產生 requirements.txt (套件清單)
+
+雲端伺服器拿到你的程式碼時，它是一台空機，不知道你用了 flask 還是 requests。你需要一張清單告訴它要安裝什麼。
+
+做法：
+在你的終端機執行這行指令：
+
+code
+Powershell
+download
+content_copy
+expand_less
+pip freeze > requirements.txt
+
+這會產生一個文字檔，裡面列出你電腦裡所有的套件。
+
+⚠️ 重要補充：
+因為雲端通常需要用更強的伺服器軟體來跑 Python (原本的 app.run 只能承受很少人)，建議你多安裝一個套件叫 gunicorn：
+
+code
+Powershell
+download
+content_copy
+expand_less
+pip install gunicorn
+pip freeze > requirements.txt  # 再生成一次確保有 gunicorn
+3. 新增 Procfile (啟動指令)
+
+這是給雲端平台看的「說明書」，告訴它：「開機後請執行這行指令」。
+
+做法：
+在專案資料夾新增一個檔案，檔名就叫 Procfile (沒有副檔名)，內容寫：
+
+code
+Text
+download
+content_copy
+expand_less
+web: gunicorn server:app
+
+server 是你的檔名 (server.py)。
+
+app 是你程式碼裡 app = Flask(__name__) 的那個變數名稱。
+
+4. 設定時區 (Timezone)
+
+學校系統是在台灣 (GMT+8)，但雲端伺服器通常在美國 (UTC+0)。
+雖然你的程式碼是用 Server Time 來拿 Cookie，影響不大，但為了讓 print 出來的 Log 時間正確，建議在雲端平台的「Environment Variables (環境變數)」設定：
+
+Key: TZ
+
+Value: Asia/Taipei
+
+🚀 總結流程圖 (未來部屬時看這個)
+
+改 Code：把 port 改成動態獲取。
+
+裝 Gunicorn：pip install gunicorn。
+
+生清單：pip freeze > requirements.txt。
+
+寫指令：建立 Procfile 寫入 web: gunicorn server:app。
+
+上傳：把這整包程式碼上傳到 GitHub。
+
+連結雲端：去 Render (免費) 或 Railway，連結你的 GitHub 專案，它就會自動部屬了。
+
+改前端：最後別忘了，把 App 裡面的 http://localhost:5000 換成雲端給你的網址 (例如 https://fcu-checkin.onrender.com)。
+
+先記錄下來，等到要交報告前一週再來實際操作部屬就好！現在你可以先專心把「打卡功能 (Scan QR)」也測通，這樣就無敵了。👍

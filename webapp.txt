@@ -1,0 +1,15 @@
+WebApp架構
+
+資料庫 (Database)：
+存入多位同學的 學號、密碼（或已登入的 cookies）。
+前端 (你的手機/網頁)：
+打開你的 Web App，開啟鏡頭掃描老師投影幕的 QR Code。
+解析出 QR Code 裡的 token。
+取得當前手機的 GPS 座標。
+將 token + GPS 傳給你的後端 API。
+後端 (Python 腳本)：
+接收到 token 和 GPS。
+從資料庫取出所有同學的 Session。
+多執行緒 (Multi-threading) 或 非同步 (Asyncio) 同時發送 POST 請求：
+Payload: { token: "...", lat: 24.17..., lng: 120.64..., student_id: "..." }
+回傳結果給前端：A同學成功、B同學成功...
