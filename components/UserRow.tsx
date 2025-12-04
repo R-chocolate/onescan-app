@@ -60,7 +60,7 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
     if (!isEditing) {
         return (
             <div className="px-2 py-1 mr-3 rounded-md bg-zinc-800/50 border border-zinc-700/50 flex items-center">
-                <span className="text-[10px] font-medium text-zinc-600">未打卡</span>
+                <span className="text-[10px] font-medium text-zinc-500">未打卡</span>
             </div>
         );
     }
@@ -103,7 +103,7 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
         {isEditing ? (
           <button 
             onClick={(e) => { e.stopPropagation(); onDelete(user.id); }}
-            className="w-8 h-8 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+            className="w-8 h-8 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center active:scale-90 transition-transform"
           >
             <X size={16} />
           </button>

@@ -15,7 +15,6 @@ import {
   ZoomIn,
   ZoomOut,
   Loader2,
-  Aperture,
   Focus,
   Scan
 } from 'lucide-react';
@@ -35,7 +34,10 @@ const App: React.FC = () => {
 
   const [scanState, setScanState] = useState<ScanState>(ScanState.IDLE);
   const [scanError, setScanError] = useState<string | null>(null);
-  const [apiEndpoint, setApiEndpoint] = useState(() => 'https://fcu-backend-290830858385.asia-east1.run.app');
+  const [apiEndpoint, setApiEndpoint] = useState(() => {
+      const saved = localStorage.getItem('onescan_api_url');
+      return saved || 'https://fcu-backend-290830858385.asia-east1.run.app';
+  });
 
   useEffect(() => {
     localStorage.setItem('onescan_api_url', apiEndpoint);
@@ -77,21 +79,21 @@ const App: React.FC = () => {
             } catch (e) { console.error("Init failed", e); }
         }
 
+        // [修正 1] 強制高解析度設定
         const config = { 
-            fps: 15, // 稍微提高一點 FPS
+            fps: 15,
             qrbox: { width: 300, height: 300 }, 
-            useBarCodeDetectorIfSupported: true, // 這是關鍵，盡量使用原生掃描器
+            useBarCodeDetectorIfSupported: true,
             videoConstraints: {
                 facingMode: "environment", 
-                // 強制要求高解析度，這樣放大時才會有細節
+                // 強制 4K 或 1080p
                 width: { min: 1920, ideal: 3840, max: 4096 }, 
                 height: { min: 1080, ideal: 2160, max: 2160 },
-                aspectRatio: 1.777777778, // 16:9，避免切邊
+                aspectRatio: { ideal: 1.7777777778 },
                 advanced: [
                     { focusMode: "continuous" },
                     { exposureMode: "continuous" },
                     { whiteBalanceMode: "continuous" }
-                    // 移除 exposureCompensation，避免預設就過暗或過亮
                 ]
             }
         };
@@ -223,38 +225,11 @@ const App: React.FC = () => {
     }
   };
 
-  // 下拉刷新
+  // 下拉刷新 (改為 Reload 網頁)
   const handleCheckStatus = async () => {
-    const loggedInUsers = users.filter(u => u.isLoggedIn);
-    if (loggedInUsers.length === 0) {
-        setIsRefreshing(false);
-        setPullDistance(0);
-        return;
-    }
-    setUsers(prev => prev.map(u => 
-        u.isLoggedIn ? { ...u, status: UserStatus.PROCESSING, message: '檢查中...' } : u
-    ));
-    try {
-        const response = await apiLoginBatch(apiEndpoint, loggedInUsers.map(u => ({ id: u.id, password: u.password })));
-        setUsers(prev => prev.map(u => {
-            const result = response.results.find(r => r.id === u.id);
-            if (result) {
-                const isSuccess = result.status === 'SUCCESS';
-                return { 
-                  ...u, 
-                  status: isSuccess ? UserStatus.SUCCESS : UserStatus.FAILED, 
-                  isLoggedIn: isSuccess, 
-                  message: isSuccess ? '狀態正常' : '憑證過期' 
-                };
-            }
-            return u;
-        }));
-    } catch (e) {
-        setUsers(prev => prev.map(u => u.isLoggedIn ? { ...u, status: UserStatus.SUCCESS, message: '無法檢查' } : u));
-    } finally {
-        setIsRefreshing(false);
-        setPullDistance(0);
-    }
+    // 這裡保留原本的空函式結構，或者直接移除
+    // 因為邏輯已經搬到 handlePullEnd 的 window.location.reload()
+    return;
   };
   
   const toggleSelectAll = () => {
@@ -276,7 +251,8 @@ const App: React.FC = () => {
     else setActiveTab(tab);
   };
 
-   const handleScanSuccess = async (decodedText: string) => {
+  // [修正 4] 打卡邏輯：失敗也要更新時間
+  const handleScanSuccess = async (decodedText: string) => {
     if (scanState !== ScanState.IDLE) return; 
     const selectedUsers = users.filter(u => u.isSelected);
     if (selectedUsers.length === 0) {
@@ -289,7 +265,6 @@ const App: React.FC = () => {
     setScanError(null);
     setScanState(ScanState.PROCESSING);
     
-    // UI 顯示打卡中 (雖然 UserRow 已經移除了 message 顯示，但保留這個狀態更新以防萬一)
     setUsers(prev => prev.map(u => u.isSelected ? { ...u, message: '打卡中...' } : u));
 
     try {
@@ -303,8 +278,7 @@ const App: React.FC = () => {
                   ...u, 
                   checkinStatus: isSuccess ? 'SUCCESS' : 'FAILED', 
                   message: result.message, 
-                  // 關鍵修改：無論成功或失敗，只要伺服器有回應，就更新「最後打卡時間」
-                  // 這樣 UserRow 才能正確判斷 10 分鐘內的狀態
+                  // 關鍵修改：無論成功或失敗，都更新時間，確保 UI 顯示
                   lastCheckinSuccess: Date.now() 
               };
           }
@@ -322,7 +296,6 @@ const App: React.FC = () => {
             }, 3000);
         }
     } catch (e) {
-        // API 請求完全失敗 (例如斷網)
         setUsers(prev => prev.map(u => u.isSelected ? { 
             ...u, 
             checkinStatus: 'FAILED', 
@@ -352,6 +325,7 @@ const App: React.FC = () => {
     } 
   };
 
+  // [修正 2] 點擊對焦：只保留動畫
   const handleCameraTap = (e: React.TouchEvent | React.MouseEvent) => {
     // @ts-ignore
     if (e.touches && e.touches.length > 1) return;
@@ -360,31 +334,9 @@ const App: React.FC = () => {
     // @ts-ignore
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
+    // 只做視覺效果，不干涉硬體曝光
     setTapEffect({ x: clientX, y: clientY });
     setTimeout(() => setTapEffect(null), 800);
-
-    if (scannerRef.current) {
-        try {
-            const videoElement = document.querySelector("#reader video") as HTMLVideoElement;
-            const track = videoElement?.srcObject instanceof MediaStream 
-                ? videoElement.srcObject.getVideoTracks()[0] 
-                : null;
-            if (!track) return;
-            
-            // 修正：不要切換 exposureMode 到 manual，這會導致過曝
-            // 策略：嘗試重新套用 focusMode: continuous。
-            // 許多瀏覽器在重新套用此 constraint 時會觸發一次重新對焦/測光運算
-            const constraints = { 
-                advanced: [{ focusMode: 'continuous', exposureMode: 'continuous' }] 
-            };
-            
-            // @ts-ignore
-            track.applyConstraints(constraints).catch(err => {
-                console.log("Focus trigger failed", err);
-            });
-
-        } catch (e) {}
-    }
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -424,12 +376,11 @@ const App: React.FC = () => {
     if (scrollContainerRef.current?.scrollTop === 0 && diff > 0 && !isRefreshing) setPullDistance(diff / 2.5);
     else setPullDistance(0);
   };
+  
+  // [修正 3] 下拉刷新：重新載入網頁
   const handlePullEnd = () => {
-    if (pullDistance > 80) { //稍微增加觸發距離，避免誤觸
+    if (pullDistance > 80) { 
         setIsRefreshing(true); 
-        
-        // 修改：直接刷新瀏覽器頁面
-        // 這會重新載入最新的部署內容，且 React 重新 mount 後會自動讀取 storage
         window.location.reload(); 
     } 
     setPullDistance(0);
