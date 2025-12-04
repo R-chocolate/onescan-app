@@ -1,6 +1,6 @@
 import React from 'react';
 import { User, UserStatus } from '../types';
-import { Check, X, Loader2, AlertCircle } from 'lucide-react';
+import { Check, X, Loader2 } from 'lucide-react';
 
 interface UserRowProps {
   user: User;
@@ -11,75 +11,68 @@ interface UserRowProps {
 
 export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onDelete }) => {
   
-  // 左側圓圈：登入狀態 (Login Session)
-  const renderStatusIcon = () => {
+  // 1. 左側圓圈：登入狀態 (Login Status)
+  const renderLoginStatusCircle = () => {
     switch (user.status) {
       case UserStatus.PROCESSING:
         return <Loader2 className="w-5 h-5 text-yellow-500 animate-spin" />;
       case UserStatus.SUCCESS:
-        return <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center"><Check size={12} className="text-white" /></div>;
+        // 登入成功：實心綠點
+        return <div className="w-5 h-5 bg-green-500 rounded-full shadow-[0_0_10px_rgba(34,197,94,0.4)]" />;
       case UserStatus.FAILED:
-        return <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center"><X size={12} className="text-white" /></div>;
-      default: // PENDING
+        // 登入失敗：實心紅點
+        return <div className="w-5 h-5 bg-red-500 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.4)]" />;
+      default: 
+        // 🔥 還原：未登入/待機狀態是「空心圓圈」
         return <div className="w-5 h-5 border-2 border-zinc-600 rounded-full" />;
     }
   };
 
-  // 右側方框：打卡結果 (Check-in Result) 或 選取狀態
-  const renderCheckBox = () => {
-    // 優先顯示打卡結果 (如果有)
+  // 2. 右側方框：打卡結果 (Check-in Result)
+  // 只有在有結果時才顯示內容，不然就是一個隱形的佔位符或空框
+  const renderCheckinResultBox = () => {
     if (user.checkinStatus === 'SUCCESS') {
       return (
-        <div className="w-6 h-6 bg-green-500 border-2 border-green-500 rounded flex items-center justify-center transition-colors">
-           <Check size={16} className="text-white" />
+        <div className="w-7 h-7 bg-green-500/20 border border-green-500 rounded flex items-center justify-center mr-3 animate-in fade-in zoom-in">
+           <Check size={14} className="text-green-500" />
         </div>
       );
     }
     if (user.checkinStatus === 'FAILED') {
       return (
-        <div className="w-6 h-6 bg-red-500 border-2 border-red-500 rounded flex items-center justify-center transition-colors">
-           <X size={16} className="text-white" />
+        <div className="w-7 h-7 bg-red-500/20 border border-red-500 rounded flex items-center justify-center mr-3 animate-in fade-in zoom-in">
+           <X size={14} className="text-red-500" />
         </div>
       );
     }
-
-    // 如果沒有打卡結果，顯示一般的選取狀態 (灰色/藍色)
+    // 沒有結果時，顯示一個淡淡的空框 (或是您可以選擇完全隱藏)
     return (
-      <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${
-        user.isSelected 
-          ? 'bg-blue-600 border-blue-600' 
-          : 'border-zinc-600 bg-transparent group-hover:border-zinc-500'
-      }`}>
-        {user.isSelected && <Check size={14} className="text-white" />}
-      </div>
+        <div className="w-7 h-7 border border-zinc-800 rounded mr-3 bg-zinc-900/50" />
     );
   };
 
   return (
-    <div 
-      onClick={() => !isEditing && onToggle(user.id)}
-      className={`group flex items-center justify-between p-4 rounded-2xl border transition-all active:scale-[0.98] ${
-        user.isSelected ? 'bg-zinc-800/80 border-blue-500/30' : 'bg-[#18181b] border-zinc-800'
-      }`}
-    >
+    <div className="flex items-center justify-between p-4 bg-[#18181b] border-b border-zinc-800/50">
+      
+      {/* 左邊區塊：登入狀態 + 文字 */}
       <div className="flex items-center space-x-4 overflow-hidden">
-        {/* 左側：登入狀態圓圈 */}
+        {/* 登入狀態圓圈 */}
         <div className="flex-shrink-0">
-           {renderStatusIcon()}
+           {renderLoginStatusCircle()}
         </div>
 
-        {/* 中間：文字資訊 */}
+        {/* 文字資訊 */}
         <div className="flex flex-col min-w-0">
-          <span className={`text-base font-bold truncate ${user.isSelected ? 'text-white' : 'text-zinc-400'}`}>
+          <span className="text-base font-medium text-zinc-200 truncate">
             {user.name}
           </span>
           <div className="flex items-center space-x-2">
              <span className="text-xs text-zinc-500 truncate">{user.id}</span>
              {user.message && (
                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                 user.message.includes('成功') ? 'bg-green-500/10 text-green-400' : 
-                 user.message.includes('失敗') || user.message.includes('錯誤') ? 'bg-red-500/10 text-red-400' :
-                 'bg-zinc-700 text-zinc-400'
+                 user.message.includes('成功') ? 'text-green-500' : 
+                 user.message.includes('失敗') || user.message.includes('錯誤') ? 'text-red-500' :
+                 'text-zinc-500'
                }`}>
                  {user.message}
                </span>
@@ -88,18 +81,32 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
         </div>
       </div>
 
-      {/* 右側：方框 (選取/打卡結果) 或 刪除按鈕 */}
-      <div className="flex-shrink-0 ml-3">
+      {/* 右邊區塊：打卡結果方框 + Toggle */}
+      <div className="flex items-center flex-shrink-0">
+        
+        {/* (A) 打卡結果方框 */}
+        {!isEditing && renderCheckinResultBox()}
+
+        {/* (B) Toggle / 刪除按鈕 */}
         {isEditing ? (
           <button 
-            onClick={(e) => { e.stopPropagation(); onDelete(user.id); }}
-            className="w-8 h-8 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center"
+            onClick={() => onDelete(user.id)}
+            className="w-8 h-8 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center active:scale-95 transition-transform"
           >
             <X size={16} />
           </button>
         ) : (
-          // 這裡顯示方框
-          renderCheckBox()
+          // 這是 Toggle 開關
+          <div 
+            onClick={() => onToggle(user.id)}
+            className={`w-12 h-7 rounded-full p-1 transition-colors cursor-pointer relative ${
+                user.isSelected ? 'bg-blue-600' : 'bg-zinc-700'
+            }`}
+          >
+            <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                user.isSelected ? 'translate-x-5' : 'translate-x-0'
+            }`} />
+          </div>
         )}
       </div>
     </div>

@@ -48,12 +48,12 @@ const App: React.FC = () => {
   const initialZoomLevel = useRef<number>(1.0);
   const [tapEffect, setTapEffect] = useState<{x: number, y: number} | null>(null);
 
-  // 硬體變焦相關
+  // 硬體變焦
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [zoomCap, setZoomCap] = useState<{min: number, max: number, step: number} | null>(null);
   const [isHardwareZoomSupported, setIsHardwareZoomSupported] = useState(false);
 
-  // -- Pull to Refresh State --
+  // -- Pull to Refresh --
   const [pullStartY, setPullStartY] = useState(0);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -83,7 +83,6 @@ const App: React.FC = () => {
             useBarCodeDetectorIfSupported: true,
             videoConstraints: {
                 facingMode: "environment", 
-                // 請求 4K 解析度，這是解決「必須貼很近」的關鍵
                 width: { min: 1280, ideal: 3840, max: 4096 }, 
                 height: { min: 720, ideal: 2160, max: 2160 },
                 advanced: [
@@ -91,7 +90,7 @@ const App: React.FC = () => {
                     { exposureMode: "continuous" },
                     { whiteBalanceMode: "continuous" },
                     // @ts-ignore
-                    { exposureCompensation: -0.7 } // 稍微降低曝光
+                    { exposureCompensation: -0.7 } 
                 ]
             }
         };
@@ -163,8 +162,7 @@ const App: React.FC = () => {
 
   // -- Actions --
   const handleToggleUser = (id: string) => {
-    // 點擊時，如果已經有打卡結果 (checkinStatus)，要清空它以便重新選擇？
-    // 或者我們保持單純：點擊就是切換 isSelected
+    // 切換 Toggle 時，我們清空「打卡結果」，代表使用者準備重新操作
     setUsers(prev => prev.map(u => 
       u.id === id ? { ...u, isSelected: !u.isSelected, checkinStatus: null } : u
     ));
@@ -186,13 +184,12 @@ const App: React.FC = () => {
     const newUser: User = {
       id: newUserId, name: newUserId, password: newUserPassword,
       role: 'Guest', status: UserStatus.PENDING, isSelected: true, isLoggedIn: false, sessionExpiry: 0, lastCheckinSuccess: 0,
-      checkinStatus: null // 預設無打卡狀態
+      checkinStatus: null
     };
     setUsers(prev => [...prev, newUser]); 
     setShowAddModal(false);
   };
   
-  // 強制登入 (右上角)
   const handleBatchLogin = async () => {
     const usersToLogin = users.filter(u => !u.isLoggedIn || u.status === UserStatus.FAILED || u.status === UserStatus.PENDING);
     if (usersToLogin.length === 0) {
@@ -213,7 +210,7 @@ const App: React.FC = () => {
                   isLoggedIn: isSuccess, 
                   sessionExpiry: isSuccess ? Date.now() + 1000 * 60 * 30 : 0, 
                   message: result.message,
-                  checkinStatus: null // 登入時清空打卡狀態
+                  checkinStatus: null
                 };
             }
             return u;
@@ -224,7 +221,6 @@ const App: React.FC = () => {
     }
   };
 
-  // 下拉刷新 (檢查狀態)
   const handleCheckStatus = async () => {
     const loggedInUsers = users.filter(u => u.isLoggedIn);
     if (loggedInUsers.length === 0) {
@@ -291,7 +287,6 @@ const App: React.FC = () => {
     setScanError(null);
     setScanState(ScanState.PROCESSING);
     
-    // 顯示「打卡中」，但不要改變 status (登入狀態)
     setUsers(prev => prev.map(u => u.isSelected ? { ...u, message: '打卡中...' } : u));
 
     try {
@@ -301,10 +296,10 @@ const App: React.FC = () => {
           const result = response.results.find(r => r.id === u.id);
           if (result) {
               const isSuccess = result.status === 'SUCCESS';
-              // 🔥 重點：只更新 checkinStatus，不要碰 status (左側圓圈)
+              // 🔥 核心修正：只更新 checkinStatus (Toggle 左邊的方框)，不影響 status (最左邊的圓圈)
               return { 
                   ...u, 
-                  checkinStatus: isSuccess ? 'SUCCESS' : 'FAILED', // 更新方框顏色
+                  checkinStatus: isSuccess ? 'SUCCESS' : 'FAILED', 
                   message: result.message, 
                   lastCheckinSuccess: isSuccess ? Date.now() : u.lastCheckinSuccess 
               };
@@ -366,7 +361,6 @@ const App: React.FC = () => {
                 : null;
             if (!track) return;
             
-            // 強制重置對焦與曝光
             const constraints = { advanced: [] };
              // @ts-ignore
             constraints.advanced.push({ focusMode: 'manual', exposureMode: 'manual' });
@@ -522,7 +516,7 @@ const App: React.FC = () => {
                 <div className="mt-2 flex flex-col items-center space-y-1 opacity-80">
                      <div className="flex items-center space-x-1">
                         <Scan size={12} className="text-yellow-400" />
-                        <p className="text-[10px] text-yellow-100 font-medium">貼士：使用音量鍵或雙指可快速縮放</p>
+                        <p className="text-[10px] text-yellow-100 font-medium">使用雙指可快速縮放</p>
                      </div>
                 </div>
             </div>
