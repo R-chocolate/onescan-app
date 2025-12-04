@@ -119,7 +119,7 @@ def _perform_login_checkin(user_id: str, password: str, qr_data: str) -> request
 
 # ================= ROUTES =================
 
-# 1. 批量登入 (保持原名 login_batch)
+# 1. 批量登入 (保持原名 login_batch，確保舊功能正常)
 @app.route('/api/login_batch', methods=['POST'])
 def handle_login_batch():
     data = request.json
@@ -130,14 +130,13 @@ def handle_login_batch():
         pwd = u['password']
         sess = _perform_login_checkin(uid, pwd, "")
         if sess:
-            # 簡單實作 session 快取 (非必要，但有助效能)
             GLOBAL_SESSIONS[uid] = {'session': sess, 'expiry': time.time() + 1800}
             results.append({"id": uid, "status": "SUCCESS", "message": "登入成功"})
         else:
             results.append({"id": uid, "status": "FAILED", "message": "登入失敗"})
     return jsonify({"status": "success", "results": results})
 
-# 2. 批量打卡 (保持原名 checkin_batch)
+# 2. 批量打卡 (保持原名 checkin_batch，確保舊功能正常)
 @app.route('/api/checkin_batch', methods=['POST'])
 def handle_checkin_batch():
     data = request.json
@@ -160,6 +159,7 @@ def handle_checkin_batch():
     return jsonify({"status": "success", "results": results})
 
 # 3. [新增] 歷史紀錄路由 (前端呼叫 /api/history)
+# 這就是您目前缺少的關鍵部分！
 @app.route('/api/history', methods=['POST'])
 def handle_history():
     data = request.json
@@ -185,7 +185,6 @@ def handle_history():
             # 使用 Session 抓取目標網頁
             resp = session.get(target_url, headers=APP_GET_HEADERS, verify=False)
             # 回傳 HTML 原始碼給前端解析
-            # 這裡回傳的是純文字 (text/html)
             return resp.text
         except Exception as e:
             print(f"Error fetching history: {e}")
