@@ -1,8 +1,9 @@
+// --- START OF FILE src/App.tsx ---
 import React, { useState, useEffect, useRef } from 'react';
 import { BottomNav } from './components/BottomNav';
 import { UserRow } from './components/UserRow';
-import { apiLoginBatch, apiCheckinBatch } from './services/api';
-import { Tab, User, UserStatus, ScanState } from './types';
+import { apiLoginBatch, apiCheckinBatch, apiGetHistory } from './services/api';
+import { Tab, User, UserStatus, ScanState, CheckinRecord } from './types';
 import { Html5Qrcode } from 'html5-qrcode';
 import { 
   CheckCheck, 
@@ -16,7 +17,10 @@ import {
   ZoomOut,
   Loader2,
   Focus,
-  Scan
+  Scan,
+  Clock,
+  MapPin,
+  Calendar
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -67,6 +71,11 @@ const App: React.FC = () => {
   const [newUserId, setNewUserId] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
 
+  // -- History Modal State --
+  const [historyUser, setHistoryUser] = useState<User | null>(null);
+  const [historyRecords, setHistoryRecords] = useState<CheckinRecord[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
   // -- Camera Init --
    useEffect(() => {
     if (activeTab === 'scan' && scanState === ScanState.IDLE) {
@@ -79,14 +88,12 @@ const App: React.FC = () => {
             } catch (e) { console.error("Init failed", e); }
         }
 
-        // [修正 1] 強制高解析度設定
         const config = { 
             fps: 15,
             qrbox: { width: 300, height: 300 }, 
             useBarCodeDetectorIfSupported: true,
             videoConstraints: {
                 facingMode: "environment", 
-                // 強制 4K 或 1080p
                 width: { min: 1920, ideal: 3840, max: 4096 }, 
                 height: { min: 1080, ideal: 2160, max: 2160 },
                 aspectRatio: { ideal: 1.7777777778 },
@@ -165,7 +172,6 @@ const App: React.FC = () => {
 
   // -- Actions --
   const handleToggleUser = (id: string) => {
-    // 切換 Toggle 時，清空「打卡結果」，以便重新打卡
     setUsers(prev => prev.map(u => 
       u.id === id ? { ...u, isSelected: !u.isSelected, checkinStatus: null } : u
     ));
@@ -193,7 +199,27 @@ const App: React.FC = () => {
     setShowAddModal(false);
   };
   
-  // 強制登入
+  // 長按查看紀錄
+  const handleLongPressUser = async (user: User) => {
+    if (isEditing) return;
+    setHistoryUser(user);
+    setHistoryRecords([]);
+    setIsLoadingHistory(true);
+
+    try {
+        const records = await apiGetHistory(apiEndpoint, { id: user.id, password: user.password });
+        setHistoryRecords(records);
+    } catch (e) {
+        console.error(e);
+    } finally {
+        setIsLoadingHistory(false);
+    }
+  };
+
+  const closeHistoryModal = () => {
+      setHistoryUser(null);
+  };
+  
   const handleBatchLogin = async () => {
     const usersToLogin = users.filter(u => !u.isLoggedIn || u.status === UserStatus.FAILED || u.status === UserStatus.PENDING);
     if (usersToLogin.length === 0) {
@@ -224,13 +250,6 @@ const App: React.FC = () => {
         alert("無法連線到後端伺服器");
     }
   };
-
-  // 下拉刷新 (改為 Reload 網頁)
-  const handleCheckStatus = async () => {
-    // 這裡保留原本的空函式結構，或者直接移除
-    // 因為邏輯已經搬到 handlePullEnd 的 window.location.reload()
-    return;
-  };
   
   const toggleSelectAll = () => {
     const allSelected = users.length > 0 && users.every(u => u.isSelected);
@@ -251,7 +270,6 @@ const App: React.FC = () => {
     else setActiveTab(tab);
   };
 
-  // [修正 4] 打卡邏輯：失敗也要更新時間
   const handleScanSuccess = async (decodedText: string) => {
     if (scanState !== ScanState.IDLE) return; 
     const selectedUsers = users.filter(u => u.isSelected);
@@ -278,7 +296,6 @@ const App: React.FC = () => {
                   ...u, 
                   checkinStatus: isSuccess ? 'SUCCESS' : 'FAILED', 
                   message: result.message, 
-                  // 關鍵修改：無論成功或失敗，都更新時間，確保 UI 顯示
                   lastCheckinSuccess: Date.now() 
               };
           }
@@ -300,7 +317,7 @@ const App: React.FC = () => {
             ...u, 
             checkinStatus: 'FAILED', 
             message: '請求失敗',
-            lastCheckinSuccess: Date.now() // 這裡也更新時間
+            lastCheckinSuccess: Date.now() 
         } : u));
         setScanError("API 請求錯誤");
         setScanState(ScanState.IDLE);
@@ -325,7 +342,6 @@ const App: React.FC = () => {
     } 
   };
 
-  // [修正 2] 點擊對焦：只保留動畫
   const handleCameraTap = (e: React.TouchEvent | React.MouseEvent) => {
     // @ts-ignore
     if (e.touches && e.touches.length > 1) return;
@@ -334,7 +350,6 @@ const App: React.FC = () => {
     // @ts-ignore
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
-    // 只做視覺效果，不干涉硬體曝光
     setTapEffect({ x: clientX, y: clientY });
     setTimeout(() => setTapEffect(null), 800);
   };
@@ -377,7 +392,6 @@ const App: React.FC = () => {
     else setPullDistance(0);
   };
   
-  // [修正 3] 下拉刷新：重新載入網頁
   const handlePullEnd = () => {
     if (pullDistance > 80) { 
         setIsRefreshing(true); 
@@ -417,10 +431,83 @@ const App: React.FC = () => {
               {!isEditing && users.length > 0 && <div className="flex items-center gap-3"><span className="text-xs text-zinc-500 font-medium">{selectedCount} Selected</span><button onClick={toggleSelectAll} className="flex items-center space-x-2 text-xs group"><span className="text-zinc-400 group-hover:text-zinc-200 transition-colors">全選</span><div className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center transition-colors ${allSelected ? 'bg-blue-500 border-blue-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>{allSelected && <Check size={12} className="text-white" />}</div></button></div>}
             </div>
             <div className="flex flex-col gap-2">
-              {users.length === 0 ? <div className="text-center py-20 text-zinc-600 border-2 border-dashed border-zinc-800 rounded-xl"><p className="text-lg mb-2">👋 Welcome to OneScan</p><p className="text-sm">點擊右上角的 + 新增同學帳號</p></div> : users.map(user => <UserRow key={user.id} user={user} isEditing={isEditing} onToggle={handleToggleUser} onDelete={handleDeleteUser} />)}
+              {users.length === 0 ? <div className="text-center py-20 text-zinc-600 border-2 border-dashed border-zinc-800 rounded-xl"><p className="text-lg mb-2">👋 Welcome to OneScan</p><p className="text-sm">點擊右上角的 + 新增同學帳號</p></div> : 
+              users.map(user => (
+                  <UserRow 
+                      key={user.id} 
+                      user={user} 
+                      isEditing={isEditing} 
+                      onToggle={handleToggleUser} 
+                      onDelete={handleDeleteUser} 
+                      onLongPress={handleLongPressUser} // 傳遞長按函式
+                  />
+              ))}
             </div>
         </div>
+        {/* Add User Modal */}
         {showAddModal && <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"><div className="bg-[#18181b] border border-zinc-700 w-full max-w-sm rounded-2xl p-6 shadow-2xl"><h2 className="text-xl font-bold text-white mb-4">新增帳號</h2><form onSubmit={handleConfirmAddUser} className="space-y-4"><div><label className="block text-xs text-zinc-400 mb-1">Account / NID帳號</label><input type="text" value={newUserId} onChange={e => setNewUserId(e.target.value)} className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="D1234567" autoFocus /></div><div><label className="block text-xs text-zinc-400 mb-1">Password / NID密碼</label><input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••" /></div><div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 rounded-xl bg-zinc-800 text-zinc-300">取消</button><button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold">新增</button></div></form></div></div>}
+        
+        {/* History Modal */}
+        {historyUser && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center pointer-events-none">
+            <div 
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm pointer-events-auto transition-opacity" 
+                onClick={closeHistoryModal}
+            />
+            
+            <div className="relative w-full max-w-sm bg-[#18181b] border-t border-zinc-700 sm:border rounded-t-2xl sm:rounded-2xl p-6 pointer-events-auto animate-in slide-in-from-bottom-10 duration-200 shadow-2xl">
+                <div className="w-12 h-1 bg-zinc-700 rounded-full mx-auto mb-6 sm:hidden" />
+                
+                <div className="flex items-center justify-between mb-6">
+                    <div>
+                        <h2 className="text-xl font-bold text-white">{historyUser.name}</h2>
+                        <p className="text-xs text-zinc-400 mt-1">打卡紀錄</p>
+                    </div>
+                    <button onClick={closeHistoryModal} className="p-2 bg-zinc-800 rounded-full text-zinc-400">
+                        <X size={20} />
+                    </button>
+                </div>
+
+                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                    {isLoadingHistory ? (
+                        <div className="py-10 flex flex-col items-center text-zinc-500">
+                            <Loader2 className="animate-spin mb-2" />
+                            <span className="text-xs">讀取中...</span>
+                        </div>
+                    ) : historyRecords.length === 0 ? (
+                        <div className="py-10 text-center text-zinc-500 border border-dashed border-zinc-800 rounded-xl">
+                            <Calendar size={24} className="mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">今日尚無紀錄</p>
+                        </div>
+                    ) : (
+                        historyRecords.map((record, index) => (
+                            <div key={index} className={`flex items-center justify-between p-3 border rounded-xl ${record.isToday ? 'bg-zinc-900 border-zinc-700' : 'bg-transparent border-zinc-800 opacity-60'}`}>
+                                <div className="flex items-center space-x-3">
+                                    <div className={`w-2 h-2 rounded-full ${record.isToday ? 'bg-green-500' : 'bg-zinc-500'}`} />
+                                    <div>
+                                        <div className="flex items-center text-sm font-bold text-zinc-200">
+                                            {record.courseName}
+                                        </div>
+                                        <div className="flex items-center text-xs text-zinc-500 mt-1">
+                                            <Clock size={10} className="mr-1" />
+                                            {record.time}
+                                            <span className="mx-2">|</span>
+                                            <span>第 {record.section} 節</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                {record.isToday && (
+                                    <span className="text-[10px] bg-green-500/10 text-green-500 border border-green-500/20 px-2 py-0.5 rounded">
+                                        Today
+                                    </span>
+                                )}
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </div>
+      )}
       </div>
     );
   };

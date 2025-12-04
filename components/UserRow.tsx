@@ -1,4 +1,5 @@
-import React from 'react';
+// --- START OF FILE src/components/UserRow.tsx ---
+import React, { useRef } from 'react';
 import { User, UserStatus } from '../types';
 import { Check, X, Loader2 } from 'lucide-react';
 
@@ -7,11 +8,35 @@ interface UserRowProps {
   isEditing: boolean;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
+  // 修正 1: 加入 onLongPress 定義
+  onLongPress: (user: User) => void; 
 }
 
-export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onDelete }) => {
+export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onDelete, onLongPress }) => {
   
-  // 1. 左側圓圈：保持只顯示「登入狀態」
+  // -- 長按邏輯 --
+  const timerRef = useRef<any>(null);
+
+  const handleTouchStart = () => {
+    timerRef.current = setTimeout(() => {
+      onLongPress(user);
+    }, 600); 
+  };
+
+  const handleTouchEnd = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const handleTouchMove = () => {
+      if (timerRef.current) {
+          clearTimeout(timerRef.current);
+          timerRef.current = null;
+      }
+  };
+
   const renderLoginStatusCircle = () => {
     switch (user.status) {
       case UserStatus.PROCESSING:
@@ -33,12 +58,10 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
     }
   };
 
-  // 2. 新增：右側狀態標籤 (取代原本的方框與中間的文字狀態)
+  // 修正 2: 確保所有路徑都回傳 null 或 JSX，不能是 void/undefined
   const renderCheckinStatusLabel = () => {
-    // 判斷是否在 10 分鐘內 (10 * 60 * 1000 = 600000 毫秒)
     const isRecent = (Date.now() - user.lastCheckinSuccess) < 600000;
     
-    // 如果不在編輯模式，且有狀態，且是最近發生的
     if (!isEditing && user.checkinStatus && isRecent) {
       if (user.checkinStatus === 'SUCCESS') {
         return (
@@ -56,33 +79,40 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
       }
     }
 
-    // 預設狀態 (未打卡 或 超過10分鐘)
     if (!isEditing) {
         return (
             <div className="px-2 py-1 mr-3 rounded-md bg-zinc-800/50 border border-zinc-700/50 flex items-center">
-                <span className="text-[10px] font-medium text-zinc-500">未打卡</span>
+                <span className="text-[10px] font-medium text-zinc-600">未打卡</span>
             </div>
         );
     }
 
+    // 關鍵修正：必須回傳 null
     return null;
   };
 
   return (
     <div 
-      className={`group relative flex items-center justify-between p-4 rounded-2xl border transition-all duration-200 ${
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
+      onMouseDown={() => { 
+          timerRef.current = setTimeout(() => onLongPress(user), 600);
+      }}
+      onMouseUp={() => { if(timerRef.current) clearTimeout(timerRef.current); }}
+      onMouseLeave={() => { if(timerRef.current) clearTimeout(timerRef.current); }}
+      onContextMenu={(e) => e.preventDefault()} // 防止長按跳出右鍵選單
+
+      className={`group relative flex items-center justify-between p-4 rounded-2xl border transition-all duration-200 select-none ${
         user.isSelected 
           ? 'bg-zinc-900 border-green-700/80' 
           : 'bg-[#14171c] border-zinc-800'
-      }`}
+      } active:scale-[0.98]`}
     >
-      <div className="flex items-center space-x-4 overflow-hidden">
-        {/* 左側：登入狀態圓圈 */}
+      <div className="flex items-center space-x-4 overflow-hidden pointer-events-none"> 
         <div className="flex-shrink-0">
            {renderLoginStatusCircle()}
         </div>
-
-        {/* 中間：文字 (已移除 message badge) */}
         <div className="flex flex-col min-w-0">
           <span className={`text-base font-bold truncate ${user.isSelected ? 'text-zinc-100' : 'text-zinc-400'}`}>
             {user.name}
@@ -93,23 +123,19 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
         </div>
       </div>
 
-      {/* 右側：打卡狀態標籤 + Toggle */}
-      <div className="flex items-center flex-shrink-0 ml-2">
-        
-        {/* (A) 新的打卡狀態標籤 (位於 Toggle 左邊) */}
+      <div className="flex items-center flex-shrink-0 ml-2 pointer-events-auto"> 
         {renderCheckinStatusLabel()}
 
-        {/* (B) Toggle 或 刪除按鈕 */}
         {isEditing ? (
           <button 
             onClick={(e) => { e.stopPropagation(); onDelete(user.id); }}
-            className="w-8 h-8 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+            className="w-8 h-8 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center"
           >
             <X size={16} />
           </button>
         ) : (
           <div 
-            onClick={() => onToggle(user.id)}
+            onClick={(e) => { e.stopPropagation(); onToggle(user.id); }}
             className={`w-11 h-6 rounded-full p-1 transition-colors cursor-pointer relative ${
                 user.isSelected ? 'bg-green-500/85' : 'bg-red-500/85'
             }`}
