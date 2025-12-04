@@ -3,7 +3,8 @@ import { BottomNav } from './components/BottomNav';
 import { UserRow } from './components/UserRow';
 import { apiLoginBatch, apiCheckinBatch, apiGetHistory } from './services/api';
 import { Tab, User, UserStatus, ScanState, CheckinRecord } from './types';
-import { Html5Qrcode } from 'html5-qrcode';
+//import { Html5Qrcode } from 'html5-qrcode';
+import QrScanner from 'qr-scanner';
 import { 
   CheckCheck, 
   AlertTriangle,
@@ -25,6 +26,11 @@ import {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('home');
   
+
+ // 在 App 開頭的變數宣告區
+const videoRef = useRef<HTMLVideoElement>(null); // 用來綁定 <video> 標籤
+const qrScannerRef = useRef<QrScanner | null>(null); // 用來存放掃描器實例
+
   // -- LocalStorage --
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem('onescan_users');
@@ -71,49 +77,44 @@ const App: React.FC = () => {
   const [historyRecords, setHistoryRecords] = useState<CheckinRecord[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
-  // -- Camera Init --
-   useEffect(() => {
+  // -- QR Scanner Effect --
+  useEffect(() => {
+    // 當切換到 scan 分頁，且掃描器尚未啟動時
     if (activeTab === 'scan' && scanState === ScanState.IDLE) {
-      const timeoutId = setTimeout(() => {
-        if (!scannerRef.current) {
-            try {
-                // @ts-ignore
-                const html5QrCode = new Html5Qrcode("reader");
-                scannerRef.current = html5QrCode;
-            } catch (e) { console.error("Init failed", e); }
-        }
-
-            const config = { 
-            fps: 10, // 降低 FPS 有助於讓處理器有更多效能處理畫質
-            qrbox: { width: 250, height: 250 }, 
-            useBarCodeDetectorIfSupported: true, // 這行很重要，會嘗試使用瀏覽器內建的原生偵測 API
-            videoConstraints: {
-                facingMode: "environment",
-                // 修正：不要設定 min，改用 ideal。
-                // 手機直向掃描時，Width 通常是短邊 (1080)，Height 是長邊 (1920)
-                width: { ideal: 1920 }, 
-                height: { ideal: 1080 },
-                // 移除固定的 aspectRatio，讓瀏覽器自己決定全螢幕
-                advanced: [
-                    { focusMode: "continuous" }, // 嘗試開啟連續對焦
-                    { zoom: 1.0 } 
-                ]
-            }
-        };
         
-        if (!isScannerRunning.current && scannerRef.current) {
-            isScannerRunning.current = true;
-            scannerRef.current.start(
-                { facingMode: "environment" }, 
-                config,
-                (decodedText: string) => {
-                    handleScanSuccess(decodedText);
-                },
-                (errorMessage: string) => { }
-            ).then(() => {
-                setTimeout(() => {
+        // 稍微延遲確保 DOM 已經 render 出來
+        const timeoutId = setTimeout(() => {
+            if (videoRef.current && !qrScannerRef.current) {
+                // 初始化 Scanner
+                const scanner = new QrScanner(
+                    videoRef.current, // 傳入 video DOM 元素
+                    (result) => {
+                        // 掃描成功的回呼
+                        // result 是一個物件，result.data 才是文字內容
+                        if (result && result.data) {
+                            handleScanSuccess(result.data);
+                        }
+                    },
+                    {
+                        // 設定選項
+                        onDecodeError: (error) => { 
+                            // 這裡可以忽略錯誤，因為每一幀沒掃到都會噴錯
+                        },
+                        highlightScanRegion: true, // 在畫面上標示掃描範圍 (選用)
+                        highlightCodeOutline: true, // 標示掃描到的 QR Code 輪廓 (選用)
+                        maxScansPerSecond: 10,      // 限制每秒掃描次數，省電且夠快了
+                        preferredCamera: 'environment' // 強制使用後鏡頭
+                    }
+                );
+
+                qrScannerRef.current = scanner;
+
+                // 啟動
+                scanner.start().then(() => {
+                    // 啟動成功後，檢查硬體變焦能力 (保留你原本的功能)
                     try {
-                        const videoElement = document.querySelector("#reader video") as HTMLVideoElement;
+                        // qr-scanner 啟動後，video 標籤會有 srcObject
+                        const videoElement = videoRef.current;
                         const track = videoElement?.srcObject instanceof MediaStream 
                             ? videoElement.srcObject.getVideoTracks()[0] 
                             : null;
@@ -135,36 +136,36 @@ const App: React.FC = () => {
                                 setZoomLevel(capabilities.zoom.min);
                             }
                         }
-                    } catch (e) {}
-                }, 500);
-            }).catch((err: any) => {
-                console.error("Camera Error", err);
-                isScannerRunning.current = false;
-                setScanError("相機啟動失敗");
-            });
-        }
-      }, 300); 
+                    } catch (e) { console.warn("Zoom check failed", e); }
+                }).catch(err => {
+                    console.error(err);
+                    setScanError("相機啟動失敗: " + err);
+                });
+            }
+        }, 100);
 
-      return () => clearTimeout(timeoutId);
-    } else {
-      if (scannerRef.current && isScannerRunning.current) {
-          scannerRef.current.stop().then(() => {
-              scannerRef.current.clear();
-              isScannerRunning.current = false;
-              setIsHardwareZoomSupported(false);
-          }).catch((err: any) => console.warn(err));
-      }
+        return () => clearTimeout(timeoutId);
+    } 
+    
+    // 當離開 scan 分頁或掃描結束時的清理工作
+    else if (activeTab !== 'scan' || scanState !== ScanState.IDLE) {
+        if (qrScannerRef.current) {
+            qrScannerRef.current.stop();
+            qrScannerRef.current.destroy();
+            qrScannerRef.current = null;
+            setIsHardwareZoomSupported(false);
+        }
     }
     
+    // Component Unmount 時的清理
     return () => {
-        if (scannerRef.current && isScannerRunning.current) {
-            isScannerRunning.current = false;
-            scannerRef.current.stop().catch(() => {}).finally(() => {
-                scannerRef.current.clear().catch(() => {});
-            });
+        if (qrScannerRef.current) {
+            qrScannerRef.current.stop();
+            qrScannerRef.current.destroy();
+            qrScannerRef.current = null;
         }
     };
-  }, [activeTab, scanState]);
+}, [activeTab, scanState]);
 
   // -- Actions --
   const handleToggleUser = (id: string) => {
@@ -322,21 +323,19 @@ const App: React.FC = () => {
 
   const applyZoom = (value: number) => {
     setZoomLevel(value);
-    if (isHardwareZoomSupported) {
+    if (isHardwareZoomSupported && videoRef.current) { // 直接使用 ref
         try {
-            const videoElement = document.querySelector("#reader video") as HTMLVideoElement;
-            const track = videoElement?.srcObject instanceof MediaStream 
-                ? videoElement.srcObject.getVideoTracks()[0] 
+            const track = videoRef.current.srcObject instanceof MediaStream 
+                ? videoRef.current.srcObject.getVideoTracks()[0] 
                 : null;
             if (track) {
-                track.applyConstraints({
-                    // @ts-ignore
-                    advanced: [{ zoom: value }]
-                }).catch(e => console.log("Zoom failed", e));
+                // @ts-ignore
+                track.applyConstraints({ advanced: [{ zoom: value }] })
+                     .catch(e => console.log("Zoom failed", e));
             }
         } catch (e) { }
     } 
-  };
+};
 
   const handleCameraTap = (e: React.TouchEvent | React.MouseEvent) => {
     // @ts-ignore
@@ -531,17 +530,27 @@ const App: React.FC = () => {
             className="absolute inset-0 flex items-center justify-center bg-black touch-none"
             onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
         >
-             <div id="reader" className="w-full h-full"></div>
-             <style>{`
-                #reader video {
-                    width: 100% !important;
-                    height: 100% !important;
-                    object-fit: cover !important; 
-                }
-             `}</style>
+             {/* --- 修改開始 --- */}
+             {/* 這裡不再使用 id="reader" div，改用 video 標籤 */}
+             <video 
+                ref={videoRef} 
+                className="w-full h-full object-cover" 
+                playsInline 
+                muted
+             ></video>
+
+             {/* 掃描框 UI (因為 qr-scanner 本身沒有 UI，所以手刻一個) */}
+             <div className="absolute w-64 h-64 border border-white/20 rounded-xl pointer-events-none flex flex-col justify-between p-0">
+                <div className="absolute top-0 left-0 w-8 h-8 border-l-4 border-t-4 border-blue-500 -ml-[2px] -mt-[2px] rounded-tl-xl"></div>
+                <div className="absolute top-0 right-0 w-8 h-8 border-r-4 border-t-4 border-blue-500 -mr-[2px] -mt-[2px] rounded-tr-xl"></div>
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-l-4 border-b-4 border-blue-500 -ml-[2px] -mb-[2px] rounded-bl-xl"></div>
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-r-4 border-b-4 border-blue-500 -mr-[2px] -mb-[2px] rounded-br-xl"></div>
+             </div>
+             {/* --- 修改結束 --- */}
         </div>
 
         {overlay}
+        
         {tapEffect && (
             <div 
                 className="absolute w-20 h-20 border-2 border-yellow-400 rounded-full animate-[ping_0.5s_ease-out_forwards] pointer-events-none z-30 flex items-center justify-center"
