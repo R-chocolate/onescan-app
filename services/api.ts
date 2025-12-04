@@ -2,6 +2,7 @@ import { CheckinRecord } from '../types';
 
 // 定義後端回傳的通用格式
 interface ApiResponse {
+  status: string; // 您原本的後端回傳的是 "status": "success"
   results: {
     id: string;
     status: 'SUCCESS' | 'FAILED';
@@ -9,42 +10,58 @@ interface ApiResponse {
   }[];
 }
 
-// 1. 批量登入 (請確認這段存在！)
+// 1. 批量登入 (改回配合您的 login_batch)
 export const apiLoginBatch = async (
   baseUrl: string, 
   users: { id: string; password?: string }[]
 ): Promise<ApiResponse> => {
-  const response = await fetch(`${baseUrl}/api/login`, {
+  // [修正] 路徑改回 login_batch
+  const response = await fetch(`${baseUrl}/api/login_batch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ users }),
   });
-  if (!response.ok) throw new Error(`Login failed: ${response.statusText}`);
+  
+  if (!response.ok) {
+    throw new Error(`Login failed: ${response.statusText}`);
+  }
+  
   return response.json();
 };
 
-// 2. 批量打卡 (請確認這段存在！)
+// 2. 批量打卡 (改回配合您的 checkin_batch)
 export const apiCheckinBatch = async (
   baseUrl: string, 
   qrcode: string, 
   users: { id: string; password?: string }[]
 ): Promise<ApiResponse> => {
-  const response = await fetch(`${baseUrl}/api/checkin`, {
+  // [修正] 路徑改回 checkin_batch
+  const response = await fetch(`${baseUrl}/api/checkin_batch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ qrcode, users }),
+    // [修正] 參數名稱改回 qr_data
+    body: JSON.stringify({ 
+        qr_data: qrcode, 
+        users 
+    }),
   });
-  if (!response.ok) throw new Error(`Checkin failed: ${response.statusText}`);
+
+  if (!response.ok) {
+    throw new Error(`Checkin failed: ${response.statusText}`);
+  }
+
   return response.json();
 };
 
-// 3. 取得歷史紀錄 (包含 HTML 解析邏輯)
+// 3. 取得歷史紀錄
+// ⚠️ 注意：因為您現在不想動後端，所以您的後端目前「沒有」這個 /api/history 的功能
+// 這個函式呼叫會失敗 (404)，這是正常的。
+// 等之後您有空更新後端 main.py，這個功能就會自動生效。
 const parseHistoryHtml = (htmlString: string): CheckinRecord[] => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlString, 'text/html');
   const records: CheckinRecord[] = [];
   
-  // 今日紀錄
   const todayTable = doc.getElementById('GridViewRec');
   if (todayTable) {
     const rows = todayTable.querySelectorAll('tr');
@@ -63,7 +80,6 @@ const parseHistoryHtml = (htmlString: string): CheckinRecord[] => {
       }
     }
   }
-  // 歷史紀錄
   const historyTable = doc.getElementById('MonthlyRecordRec');
   if (historyTable) {
     const rows = historyTable.querySelectorAll('tr');
@@ -100,7 +116,7 @@ export const apiGetHistory = async (
     const html = await response.text();
     return parseHistoryHtml(html);
   } catch (error) {
-    console.error("Fetch history failed", error);
+    console.warn("Fetch history failed (Backend route likely missing)");
     return [];
   }
 };
