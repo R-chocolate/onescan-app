@@ -417,15 +417,12 @@ const App: React.FC = () => {
               <span className="absolute right-0 -top-4 text-[10px] text-zinc-600 font-medium tracking-wide">建議用瀏覽器開啟</span>
               <div className="flex items-center space-x-2">
                 {!isEditing && <button onClick={() => handleBatchLogin()} className="w-10 h-10 bg-[#18181b] rounded-full text-zinc-300 flex items-center justify-center shadow-lg active:scale-95 transition-transform"><RotateCcw size={18} /></button>}
-                <button onClick={toggleEditMode} className={`flex items-center space-x-1 px-3 py-2 rounded-lg transition-colors ${isEditing ? 'bg-blue-600 text-white' : 'bg-[#18181b] text-zinc-300 shadow-md'}`}>{isEditing ? <Check size={18} /> : <Edit2 size={18} />}<span className="text-xs font-medium">{isEditing ? 'Done' : 'Edit'}</span></button>
+                <button onClick={toggleEditMode} className={`flex items-center space-x-1 px-3 py-2 rounded-lg transition-colors ${isEditing ? 'bg-blue-600 text-white' : 'bg-[#18181b] text-zinc-300 shadow-md'}`}>{isEditing ? <Check size={20} /> : <Edit2 size={20} />}<span className="text-xs font-medium">{isEditing ? 'Done' : 'Edit'}</span></button>
                 <button onClick={handleOpenAddModal} className="p-2 bg-blue-600 rounded-full text-white shadow-lg active:scale-95 transition-transform"><Plus size={24} /></button>
               </div>
             </div>
             <div className="flex items-center justify-between mb-4 px-1">
-              <h2 className="text-xs font-semibold text-zinc-500 uppercase">登入狀態 / 帳號列表</h2>
-              <span className="text-[10px] text-zinc-600 font-normal border border-zinc-800 rounded px-1.5 py-0.5">
-               長按查看紀錄
-              </span>
+              <h2 className="text-xs font-semibold text-zinc-500 uppercase">登入狀態 / 長按查看紀錄</h2>
               {!isEditing && users.length > 0 && <div className="flex items-center gap-3"><span className="text-xs text-zinc-500 font-medium">{selectedCount} Selected</span><button onClick={toggleSelectAll} className="flex items-center space-x-2 text-xs group"><span className="text-zinc-400 group-hover:text-zinc-200 transition-colors">All</span><div className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center transition-colors ${allSelected ? 'bg-blue-500 border-blue-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>{allSelected && <Check size={12} className="text-white" />}</div></button></div>}
             </div>
             <div className="flex flex-col gap-2">
