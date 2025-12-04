@@ -73,15 +73,23 @@ const App: React.FC = () => {
             } catch (e) { console.error("Init failed", e); }
         }
 
+        // 🔥 優化相機參數：加入曝光與對焦的高級設定 🔥
         const config = { 
             fps: 15, 
             qrbox: { width: 250, height: 250 }, 
             aspectRatio: window.innerHeight / window.innerWidth,
             videoConstraints: {
                 facingMode: "environment", 
-                focusMode: "continuous",   
-                width: { min: 720, ideal: 1280, max: 1920 }, 
-                height: { min: 720, ideal: 1280, max: 1080 }
+                // 嘗試請求連續對焦與曝光
+                focusMode: "continuous",
+                exposureMode: "continuous",  
+                width: { min: 720, ideal: 1920, max: 3840 }, // 請求更高解析度以獲得更好的感光
+                height: { min: 720, ideal: 1080, max: 2160 },
+                advanced: [
+                    { focusMode: "continuous" },
+                    { exposureMode: "continuous" },
+                    { whiteBalanceMode: "continuous" }
+                ]
             }
         };
         
@@ -160,19 +168,21 @@ const App: React.FC = () => {
     setShowAddModal(false);
   };
   
+  // 🔥 右上角按鈕：強制登入 (Force Login) 🔥
   const handleBatchLogin = async () => {
+    // 找出所有未登入或失敗的
     const usersToLogin = users.filter(u => !u.isLoggedIn || u.status === UserStatus.FAILED || u.status === UserStatus.PENDING);
     
-    if (usersToLogin.length === 0 && !isRefreshing) {
+    if (usersToLogin.length === 0) {
          if (!confirm("所有帳號看起來都已登入，要強制重新刷新嗎？")) return;
     }
 
     setUsers(prev => prev.map(u => 
-        usersToLogin.some(t => t.id === u.id) || isRefreshing ? { ...u, status: UserStatus.PROCESSING, message: '連線中...' } : u
+        usersToLogin.some(t => t.id === u.id) ? { ...u, status: UserStatus.PROCESSING, message: '連線中...' } : u
     ));
 
     try {
-        const response = await apiLoginBatch(apiEndpoint, (isRefreshing ? users : usersToLogin).map(u => ({ id: u.id, password: u.password })));
+        const response = await apiLoginBatch(apiEndpoint, usersToLogin.map(u => ({ id: u.id, password: u.password })));
         
         setUsers(prev => prev.map(u => {
             const result = response.results.find(r => r.id === u.id);
@@ -189,14 +199,55 @@ const App: React.FC = () => {
             return u;
         }));
     } catch (e) {
-        // 🔥 修正處：加上了小括號 ({ ... })
         setUsers(prev => prev.map(u => ({ 
              ...u, 
              status: UserStatus.FAILED, 
              message: '連線失敗' 
         })));
+        alert("無法連線到後端伺服器");
+    }
+  };
 
-        if(!isRefreshing) alert("無法連線到後端伺服器");
+  // 🔥 下拉刷新專用：檢查狀態 (Check Status) 🔥
+  const handleCheckStatus = async () => {
+    // 找出目前顯示「已登入」的帳號
+    const loggedInUsers = users.filter(u => u.isLoggedIn);
+
+    if (loggedInUsers.length === 0) {
+        setIsRefreshing(false);
+        setPullDistance(0);
+        return;
+    }
+
+    // 1. 將這些帳號轉圈圈 (Processing)
+    setUsers(prev => prev.map(u => 
+        u.isLoggedIn ? { ...u, status: UserStatus.PROCESSING, message: '檢查中...' } : u
+    ));
+
+    try {
+        // 2. 重新驗證 (使用 Login API 來模擬檢查 Session)
+        const response = await apiLoginBatch(apiEndpoint, loggedInUsers.map(u => ({ id: u.id, password: u.password })));
+        
+        setUsers(prev => prev.map(u => {
+            const result = response.results.find(r => r.id === u.id);
+            if (result) {
+                const isSuccess = result.status === 'SUCCESS';
+                // 如果成功 -> 保持綠色
+                // 如果失敗 -> 變成紅色 X，且 isLoggedIn = false
+                return {
+                    ...u,
+                    status: isSuccess ? UserStatus.SUCCESS : UserStatus.FAILED,
+                    isLoggedIn: isSuccess,
+                    message: isSuccess ? '狀態正常' : '憑證過期'
+                };
+            }
+            return u;
+        }));
+    } catch (e) {
+        // 網路連不上時，不改變狀態，只提示
+        setUsers(prev => prev.map(u => 
+             u.isLoggedIn ? { ...u, status: UserStatus.SUCCESS, message: '無法檢查' } : u
+        ));
     } finally {
         setIsRefreshing(false);
         setPullDistance(0);
@@ -364,7 +415,7 @@ const App: React.FC = () => {
   const handlePullEnd = () => {
     if (pullDistance > 60) {
         setIsRefreshing(true);
-        handleBatchLogin(); 
+        handleCheckStatus(); // 🔥 這裡改為呼叫「檢查狀態」邏輯
     } 
     setPullDistance(0);
   };
@@ -497,10 +548,10 @@ const App: React.FC = () => {
 
   const renderScan = () => {
     let overlay = null;
-    let borderColor = "border-blue-500";
+    let borderColor = "border-transparent"; // 🔥 移除原本的顏色邊框
 
     if (scanState === ScanState.PROCESSING) {
-      borderColor = "border-yellow-400";
+      // 處理中不顯示框，只顯示轉圈
       overlay = (
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-20 pointer-events-none">
           <div className="w-16 h-16 border-4 border-t-blue-500 border-blue-200 rounded-full animate-spin mb-4"></div>
@@ -508,7 +559,6 @@ const App: React.FC = () => {
         </div>
       );
     } else if (scanState === ScanState.RESULT_SUCCESS) {
-      borderColor = "border-green-500";
       overlay = (
         <div className="absolute inset-0 bg-green-600/95 backdrop-blur-md flex flex-col items-center justify-center z-20 px-8 text-center animate-in fade-in">
           <CheckCheck className="text-white w-24 h-24 mb-4" />
@@ -518,7 +568,6 @@ const App: React.FC = () => {
         </div>
       );
     } else if (scanState === ScanState.RESULT_PARTIAL) {
-      borderColor = "border-red-500";
       overlay = (
         <div className="absolute inset-0 bg-[#09090b]/90 backdrop-blur-md flex flex-col items-center justify-center z-20 px-6 text-center animate-in zoom-in-95">
           <AlertTriangle className="text-red-500 w-16 h-16 mb-4" />
@@ -561,13 +610,14 @@ const App: React.FC = () => {
              `}</style>
         </div>
 
-        <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
-            <div className={`relative w-64 h-64 border-2 ${borderColor} rounded-3xl shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]`}>
+        {/* 🔥 移除原本的藍色方框，只保留動畫光條 (可選，這裡我把它隱藏了，如果要留掃描線可以解開註解) */}
+        {/* <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
+             <div className="relative w-64 h-64 border-0 rounded-3xl">
                 {scanState === ScanState.IDLE && (
-                    <div className="absolute left-2 right-2 h-0.5 bg-blue-500/80 shadow-[0_0_10px_rgba(59,130,246,0.8)] animate-[scan_2s_ease-in-out_infinite]"></div>
+                    <div className="absolute left-0 right-0 h-0.5 bg-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,1)] animate-[scan_2s_ease-in-out_infinite]"></div>
                 )}
             </div>
-        </div>
+        </div> */}
 
         {overlay}
 
