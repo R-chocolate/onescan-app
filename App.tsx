@@ -275,7 +275,7 @@ const App: React.FC = () => {
     else setActiveTab(tab);
   };
 
-  const handleScanSuccess = async (decodedText: string) => {
+   const handleScanSuccess = async (decodedText: string) => {
     if (scanState !== ScanState.IDLE) return; 
     const selectedUsers = users.filter(u => u.isSelected);
     if (selectedUsers.length === 0) {
@@ -288,6 +288,7 @@ const App: React.FC = () => {
     setScanError(null);
     setScanState(ScanState.PROCESSING);
     
+    // UI 顯示打卡中 (雖然 UserRow 已經移除了 message 顯示，但保留這個狀態更新以防萬一)
     setUsers(prev => prev.map(u => u.isSelected ? { ...u, message: '打卡中...' } : u));
 
     try {
@@ -299,10 +300,11 @@ const App: React.FC = () => {
               const isSuccess = result.status === 'SUCCESS';
               return { 
                   ...u, 
-                  // 🔥 只更新 Toggle 左邊的方框
                   checkinStatus: isSuccess ? 'SUCCESS' : 'FAILED', 
                   message: result.message, 
-                  lastCheckinSuccess: isSuccess ? Date.now() : u.lastCheckinSuccess 
+                  // 關鍵修改：無論成功或失敗，只要伺服器有回應，就更新「最後打卡時間」
+                  // 這樣 UserRow 才能正確判斷 10 分鐘內的狀態
+                  lastCheckinSuccess: Date.now() 
               };
           }
           return u;
@@ -319,7 +321,13 @@ const App: React.FC = () => {
             }, 3000);
         }
     } catch (e) {
-        setUsers(prev => prev.map(u => u.isSelected ? { ...u, checkinStatus: 'FAILED', message: '請求失敗' } : u));
+        // API 請求完全失敗 (例如斷網)
+        setUsers(prev => prev.map(u => u.isSelected ? { 
+            ...u, 
+            checkinStatus: 'FAILED', 
+            message: '請求失敗',
+            lastCheckinSuccess: Date.now() // 這裡也更新時間
+        } : u));
         setScanError("API 請求錯誤");
         setScanState(ScanState.IDLE);
     }
