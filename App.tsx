@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BottomNav } from './components/BottomNav';
 import { UserRow } from './components/UserRow';
-import { apiLoginBatch, apiCheckinBatch } from './services/api';  // Assuming this function is updated to handle full login/checkin
+import { apiLoginBatch, apiCheckinBatch } from './services/api';
 import { Tab, User, UserStatus, ScanState } from './types';
 import { Html5Qrcode } from 'html5-qrcode';
 import { 
@@ -14,19 +14,18 @@ import {
   RotateCcw,
   ZoomIn,
   ZoomOut,
-  Camera
+  Loader2
 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('home');
   
-  // -- 1. LocalStorage 初始化 (資料持久化) --
+  // -- LocalStorage 初始化 --
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem('onescan_users');
     return saved ? JSON.parse(saved) : [];
   });
 
-  // 當 users 變動時，自動存入 LocalStorage
   useEffect(() => {
     localStorage.setItem('onescan_users', JSON.stringify(users));
   }, [users]);
@@ -34,9 +33,9 @@ const App: React.FC = () => {
   const [scanState, setScanState] = useState<ScanState>(ScanState.IDLE);
   const [scanError, setScanError] = useState<string | null>(null);
   
-  // -- App Settings (也是從 LocalStorage 讀取) --
+  // -- Settings --
   const [apiEndpoint, setApiEndpoint] = useState(() => {
-    return 'https://fcu-backend-290830858385.asia-east1.run.app'; //localStorage.getItem('onescan_api_url') || 
+    return 'https://fcu-backend-290830858385.asia-east1.run.app';
   });
 
   useEffect(() => {
@@ -47,6 +46,14 @@ const App: React.FC = () => {
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const scannerRef = useRef<any>(null); 
   const isScannerRunning = useRef(false);
+  const initialPinchDistance = useRef<number | null>(null);
+  const initialZoomLevel = useRef<number>(1.0);
+
+  // -- Pull to Refresh State --
+  const [pullStartY, setPullStartY] = useState(0);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // -- UI State --
   const [isEditing, setIsEditing] = useState(false);
@@ -54,7 +61,7 @@ const App: React.FC = () => {
   const [newUserId, setNewUserId] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
 
- // start camera when entering scan tab
+  // -- Camera Init --
    useEffect(() => {
     if (activeTab === 'scan' && scanState === ScanState.IDLE) {
       const timeoutId = setTimeout(() => {
@@ -66,15 +73,14 @@ const App: React.FC = () => {
             } catch (e) { console.error("Init failed", e); }
         }
 
-        // 🔥 設定：提高解析度與對焦嘗試
         const config = { 
-            fps: 15, // 提高偵測頻率
-            qrbox: { width: 250, height: 250 }, // 掃描框大小
-            aspectRatio: window.innerHeight / window.innerWidth, // 配合螢幕比例
+            fps: 15, 
+            qrbox: { width: 250, height: 250 }, 
+            aspectRatio: window.innerHeight / window.innerWidth,
             videoConstraints: {
-                facingMode: "environment", // 後鏡頭
-                focusMode: "continuous",   // 嘗試請求連續自動對焦 (部分手機支援)
-                width: { min: 720, ideal: 1280, max: 1920 }, // 請求高畫質 (關鍵！)
+                facingMode: "environment", 
+                focusMode: "continuous",   
+                width: { min: 720, ideal: 1280, max: 1920 }, 
                 height: { min: 720, ideal: 1280, max: 1080 }
             }
         };
@@ -87,20 +93,17 @@ const App: React.FC = () => {
                 (decodedText: string) => {
                     handleScanSuccess(decodedText);
                 },
-                (errorMessage: string) => {
-                    // console.log(errorMessage); // 忽略掃描過程中的錯誤
-                }
+                (errorMessage: string) => { }
             ).catch((err: any) => {
                 console.error("Camera Error", err);
                 isScannerRunning.current = false;
-                setScanError("相機啟動失敗，請確認權限或使用 Chrome/Safari");
+                setScanError("相機啟動失敗");
             });
         }
       }, 300); 
 
       return () => clearTimeout(timeoutId);
     } else {
-      // 關閉相機邏輯保持不變...
       if (scannerRef.current && isScannerRunning.current) {
           scannerRef.current.stop().then(() => {
               scannerRef.current.clear();
@@ -119,9 +122,7 @@ const App: React.FC = () => {
     };
   }, [activeTab, scanState]);
 
-
-
-  // -- User Actions --
+  // -- Actions --
 
   const handleToggleUser = (id: string) => {
     setUsers(prev => prev.map(u => 
@@ -143,7 +144,6 @@ const App: React.FC = () => {
     e.preventDefault();
     if (!newUserId.trim()) return;
 
-    // IMPORTANT: The new user state must include isLoggedIn and lastCheckin
     const newUser: User = {
       id: newUserId,
       name: newUserId, 
@@ -151,7 +151,7 @@ const App: React.FC = () => {
       role: 'Guest',
       status: UserStatus.PENDING,
       isSelected: true,
-      isLoggedIn: false, // 預設未登入
+      isLoggedIn: false,
       sessionExpiry: 0,
       lastCheckinSuccess: 0
     };
@@ -160,34 +160,20 @@ const App: React.FC = () => {
     setShowAddModal(false);
   };
   
-  // 核心邏輯：測試 Session 有效性 / 重新登入
-  // 這裡假設後端會自動判斷 Session 是否有效，並只對無效的執行登入
-  // 核心邏輯：執行真實登入
   const handleBatchLogin = async () => {
-    // 找出所有未登入或 Session 過期的帳號 (或是你想每次都全部刷新也可以)
-    // 這裡我們簡單點，只要是被選取的，或是未登入的，就重新登入
     const usersToLogin = users.filter(u => !u.isLoggedIn || u.status === UserStatus.FAILED || u.status === UserStatus.PENDING);
     
-    if (usersToLogin.length === 0) {
-        // 如果大家都登入了，可以強制全部刷新
-        if (confirm("所有帳號看起來都已登入，要強制重新刷新嗎？")) {
-             // 繼續執行
-        } else {
-            return;
-        }
+    if (usersToLogin.length === 0 && !isRefreshing) {
+         if (!confirm("所有帳號看起來都已登入，要強制重新刷新嗎？")) return;
     }
 
-    // 1. 設定 UI 狀態為轉圈圈
     setUsers(prev => prev.map(u => 
-        // 只要在這次登入名單內的，都變黃色
-        usersToLogin.some(t => t.id === u.id) ? { ...u, status: UserStatus.PROCESSING, message: '連線中...' } : u
+        usersToLogin.some(t => t.id === u.id) || isRefreshing ? { ...u, status: UserStatus.PROCESSING, message: '連線中...' } : u
     ));
 
     try {
-        // 2. 呼叫真實 API
-        const response = await apiLoginBatch(apiEndpoint, usersToLogin.map(u => ({ id: u.id, password: u.password })));
+        const response = await apiLoginBatch(apiEndpoint, (isRefreshing ? users : usersToLogin).map(u => ({ id: u.id, password: u.password })));
         
-        // 3. 更新結果
         setUsers(prev => prev.map(u => {
             const result = response.results.find(r => r.id === u.id);
             if (result) {
@@ -196,7 +182,6 @@ const App: React.FC = () => {
                     ...u,
                     status: isSuccess ? UserStatus.SUCCESS : UserStatus.FAILED,
                     isLoggedIn: isSuccess,
-                    // 成功的話設為 30 分鐘，失敗歸零
                     sessionExpiry: isSuccess ? Date.now() + 1000 * 60 * 30 : 0,
                     message: result.message
                 };
@@ -204,37 +189,28 @@ const App: React.FC = () => {
             return u;
         }));
     } catch (e) {
-        // 4. 處理網路錯誤 (例如後端沒開)
-        setUsers(prev => prev.map(u => 
-             usersToLogin.some(t => t.id === u.id) ? { ...u, status: UserStatus.FAILED, message: '連線失敗' } : u
-        ));
-        alert("無法連線到後端伺服器，請檢查 IP 設定");
+        // 🔥 修正處：加上了小括號 ({ ... })
+        setUsers(prev => prev.map(u => ({ 
+             ...u, 
+             status: UserStatus.FAILED, 
+             message: '連線失敗' 
+        })));
+
+        if(!isRefreshing) alert("無法連線到後端伺服器");
+    } finally {
+        setIsRefreshing(false);
+        setPullDistance(0);
     }
   };
   
-  // 批量全選/全不選
   const toggleSelectAll = () => {
     const allSelected = users.length > 0 && users.every(u => u.isSelected);
     setUsers(prev => prev.map(u => ({ ...u, isSelected: !allSelected })));
   };
 
-  const handleResetStatuses = () => {
-    setUsers(prev => prev.map(u => ({
-      ...u,
-      status: UserStatus.PENDING,
-      message: undefined,
-      isLoggedIn: false,
-      sessionExpiry: 0,
-      lastCheckinSuccess: 0
-    })));
-  };
-
   const toggleEditMode = () => setIsEditing(!isEditing);
 
-  // -- Navigation Actions --
-
   const handleReturnHome = () => {
-    // 關鍵：打卡成功後，自動將所有 Toggle 設為 OFF (防呆)
     setUsers(prev => prev.map(u => ({ ...u, isSelected: false }))); 
     setScanState(ScanState.IDLE);
     setScanError(null);
@@ -249,12 +225,9 @@ const App: React.FC = () => {
     }
   };
 
-  // -- Scan Logic (Real API) --
-
   const handleScanSuccess = async (decodedText: string) => {
     if (scanState !== ScanState.IDLE) return; 
 
-    // 1. 驗證
     const selectedUsers = users.filter(u => u.isSelected);
     if (selectedUsers.length === 0) {
       setScanError("未選取任何帳號");
@@ -262,7 +235,6 @@ const App: React.FC = () => {
       return;
     }
     
-    // 2. 暫停相機
     try {
         if (scannerRef.current) scannerRef.current.pause(); 
     } catch (e) { console.warn("Pause error", e); }
@@ -275,14 +247,12 @@ const App: React.FC = () => {
     ));
 
     try {
-        // 3. 呼叫 API
         const response = await apiCheckinBatch(
             apiEndpoint, 
             decodedText, 
             selectedUsers.map(u => ({ id: u.id, password: u.password }))
         );
 
-        // 4. 更新 User 狀態
         setUsers(prev => prev.map(u => {
           const result = response.results.find(r => r.id === u.id);
           if (result) {
@@ -297,9 +267,8 @@ const App: React.FC = () => {
           return u;
         }));
 
-        // 🔥 5. 修正邏輯開始：使用「區域變數」來判斷結果，而不是讀取 state 🔥
         const failedCount = response.results.filter(r => r.status === 'FAILED').length;
-        let finalState = ScanState.IDLE; // 暫存最終狀態
+        let finalState = ScanState.IDLE; 
 
         if (failedCount === 0) {
           finalState = ScanState.RESULT_SUCCESS;
@@ -307,11 +276,8 @@ const App: React.FC = () => {
           finalState = ScanState.RESULT_PARTIAL;
         }
         
-        // 更新 React 狀態
         setScanState(finalState);
 
-        // 使用「區域變數 finalState」來判斷是否要設定倒數計時
-        // 這樣就不會報錯了
         if (finalState === ScanState.RESULT_SUCCESS || finalState === ScanState.RESULT_PARTIAL) {
             setTimeout(() => {
                 setScanState(ScanState.IDLE);
@@ -330,30 +296,78 @@ const App: React.FC = () => {
     }
   };
 
-  // -- Camera Effect (Zoom Logic) --
-  // ... (Zoom Logic remains the same)
-
+  // -- Zoom Logic --
   const applyZoom = (value: number) => {
-    setZoomLevel(value);
-    if (!scannerRef.current) return;
+    const clampedValue = Math.min(Math.max(value, 1), 5);
+    setZoomLevel(clampedValue);
     
-    // 1. 嘗試硬體變焦
-    try {
-        const videoTrack = scannerRef.current.html5QrCode?.scanner?.videoElement?.srcObject?.getVideoTracks()[0];
-        if (videoTrack) {
-             const capabilities = videoTrack.getCapabilities();
-             if (capabilities.zoom) {
-                 videoTrack.applyConstraints({ advanced: [{ zoom: value }] });
-                 return; // 硬體支援，直接返回
-             }
-        }
-    } catch (e) {
-        console.log("Hardware zoom not supported", e);
+    if (scannerRef.current) {
+         try {
+            const videoTrack = scannerRef.current.html5QrCode?.scanner?.videoElement?.srcObject?.getVideoTracks()[0];
+            if (videoTrack) {
+                 const capabilities = videoTrack.getCapabilities();
+                 if (capabilities.zoom) {
+                     videoTrack.applyConstraints({ advanced: [{ zoom: clampedValue }] });
+                 }
+            }
+        } catch (e) {}
     }
-
-    // 2. 硬體不支援，這裡不做事，因為 CSS transform 會在 render 裡處理
   };
 
+  // -- Touch Handling for Pinch --
+  const handleTouchStart = (e: React.TouchEvent) => {
+      if (e.touches.length === 2) {
+          const touch1 = e.touches[0];
+          const touch2 = e.touches[1];
+          const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+          initialPinchDistance.current = dist;
+          initialZoomLevel.current = zoomLevel;
+      }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+      if (e.touches.length === 2 && initialPinchDistance.current) {
+          const touch1 = e.touches[0];
+          const touch2 = e.touches[1];
+          const currentDist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+          
+          const scaleFactor = currentDist / initialPinchDistance.current;
+          const delta = (scaleFactor - 1) * 2; 
+          const newZoom = initialZoomLevel.current + delta;
+          
+          applyZoom(newZoom);
+      }
+  };
+
+  const handleTouchEnd = () => {
+      initialPinchDistance.current = null;
+  };
+
+  // -- Pull to Refresh --
+  const handlePullStart = (e: React.TouchEvent) => {
+    if (scrollContainerRef.current?.scrollTop === 0) {
+        setPullStartY(e.touches[0].clientY);
+    }
+  };
+
+  const handlePullMove = (e: React.TouchEvent) => {
+    const y = e.touches[0].clientY;
+    const diff = y - pullStartY;
+    
+    if (scrollContainerRef.current?.scrollTop === 0 && diff > 0 && !isRefreshing) {
+        setPullDistance(diff / 2.5);
+    } else {
+        setPullDistance(0);
+    }
+  };
+
+  const handlePullEnd = () => {
+    if (pullDistance > 60) {
+        setIsRefreshing(true);
+        handleBatchLogin(); 
+    } 
+    setPullDistance(0);
+  };
 
   // -- Render Views --
 
@@ -362,88 +376,103 @@ const App: React.FC = () => {
     const allSelected = users.length > 0 && users.every(u => u.isSelected);
 
     return (
-      // 配色：改為 Zinc 950 (極深灰)
-      <div className="flex flex-col h-full pt-12 px-4 pb-24 overflow-y-auto no-scrollbar bg-[#09090b] relative">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-white">OneScan</h1>
-            <p className="text-zinc-400 text-xs">{users.length} Accounts</p>
-          </div>
-          <div className="flex items-center space-x-2">
-
-        {/* 🔥 新增：瀏覽器建議提示條 🔥 */}
-        <div className="mb-4 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg flex items-center gap-2">
-          <div className="w-1 h-8 bg-yellow-500 rounded-full"></div>
-          <p className="text-xs text-zinc-400 leading-tight">
-            若無法開啟相機或黑屏，請點擊右上角選單<br/>
-            選擇 <span className="text-white font-bold">「使用預設瀏覽器開啟」</span>
-          </p>
+      <div 
+        className="flex flex-col h-full pt-12 px-4 pb-24 overflow-y-auto no-scrollbar bg-[#09090b] relative"
+        ref={scrollContainerRef}
+        onTouchStart={handlePullStart}
+        onTouchMove={handlePullMove}
+        onTouchEnd={handlePullEnd}
+      >
+        <div 
+            className="absolute top-0 left-0 right-0 flex justify-center items-center pointer-events-none transition-transform duration-200"
+            style={{ 
+                transform: `translateY(${isRefreshing ? 60 : pullDistance}px)`,
+                opacity: isRefreshing || pullDistance > 0 ? 1 : 0 
+            }}
+        >
+            <div className="bg-zinc-800 p-2 rounded-full shadow-lg border border-zinc-700">
+                {isRefreshing ? (
+                    <Loader2 className="animate-spin text-blue-500" size={20} />
+                ) : (
+                    <RotateCcw 
+                        size={20} 
+                        className={`text-zinc-400 transition-transform ${pullDistance > 60 ? 'rotate-180' : ''}`} 
+                    />
+                )}
+            </div>
         </div>
 
-            {/* 刷新/登入按鈕 */}
-            {!isEditing && (
-              <button onClick={handleBatchLogin} className="w-10 h-10 bg-[#18181b] rounded-full text-zinc-300 flex items-center justify-center shadow-lg active:scale-95 transition-transform">
-                <RotateCcw size={18} />
-              </button>
-            )}
+        <div style={{ transform: `translateY(${isRefreshing ? 60 : pullDistance}px)`, transition: isRefreshing ? 'transform 0.2s' : 'none' }}>
             
-            {/* 編輯/完成按鈕 */}
-            <button 
-              onClick={toggleEditMode}
-              className={`flex items-center space-x-1 px-3 py-2 rounded-lg transition-colors ${isEditing ? 'bg-blue-600 text-white' : 'bg-[#18181b] text-zinc-300 shadow-md'}`}
-            >
-              {isEditing ? <Check size={18} /> : <Edit2 size={18} />}
-              <span className="text-xs font-medium">{isEditing ? '完成' : 'Edit'}</span>
-            </button>
-            
-            {/* 新增按鈕 */}
-            <button onClick={handleOpenAddModal} className="p-2 bg-blue-600 rounded-full text-white shadow-lg active:scale-95 transition-transform">
-              <Plus size={24} />
-            </button>
-          </div>
+            <div className="flex items-center justify-between mb-6 relative">
+              <div>
+                <h1 className="text-2xl font-bold text-white">OneScan</h1>
+                <p className="text-zinc-400 text-xs">{users.length} Accounts</p>
+              </div>
+              
+              <span className="absolute right-0 -top-4 text-[10px] text-zinc-600 font-medium tracking-wide">
+                  建議用瀏覽器開啟
+              </span>
+
+              <div className="flex items-center space-x-2">
+                {!isEditing && (
+                  <button onClick={() => handleBatchLogin()} className="w-10 h-10 bg-[#18181b] rounded-full text-zinc-300 flex items-center justify-center shadow-lg active:scale-95 transition-transform">
+                    <RotateCcw size={18} />
+                  </button>
+                )}
+                
+                <button 
+                  onClick={toggleEditMode}
+                  className={`flex items-center space-x-1 px-3 py-2 rounded-lg transition-colors ${isEditing ? 'bg-blue-600 text-white' : 'bg-[#18181b] text-zinc-300 shadow-md'}`}
+                >
+                  {isEditing ? <Check size={18} /> : <Edit2 size={18} />}
+                  <span className="text-xs font-medium">{isEditing ? '完成' : 'Edit'}</span>
+                </button>
+                
+                <button onClick={handleOpenAddModal} className="p-2 bg-blue-600 rounded-full text-white shadow-lg active:scale-95 transition-transform">
+                  <Plus size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between mb-4 px-1">
+              <h2 className="text-xs font-semibold text-zinc-500 uppercase">帳號列表 / 狀態</h2>
+              {!isEditing && users.length > 0 && (
+                 <div className="flex items-center gap-3">
+                     <span className="text-xs text-zinc-500 font-medium">{selectedCount} Selected</span>
+                     <button onClick={toggleSelectAll} className="flex items-center space-x-2 text-xs group">
+                         <span className="text-zinc-400 group-hover:text-zinc-200 transition-colors">全選</span>
+                         <div className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center transition-colors ${allSelected ? 'bg-blue-500 border-blue-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>
+                           {allSelected && <Check size={12} className="text-white" />}
+                         </div>
+                     </button>
+                 </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {users.length === 0 ? (
+                 <div className="text-center py-20 text-zinc-600 border-2 border-dashed border-zinc-800 rounded-xl">
+                   <p className="text-lg mb-2">👋 Welcome to OneScan</p>
+                   <p className="text-sm">點擊右上角的 + 新增同學帳號</p>
+                 </div>
+              ) : (
+                users.map(user => (
+                  <UserRow 
+                    key={user.id} 
+                    user={user} 
+                    isEditing={isEditing}
+                    onToggle={handleToggleUser}
+                    onDelete={handleDeleteUser}
+                  />
+                ))
+              )}
+            </div>
         </div>
 
-        {/* List Header */}
-        <div className="flex items-center justify-between mb-4 px-1">
-          <h2 className="text-xs font-semibold text-zinc-500 uppercase">帳號列表 / 狀態</h2>
-          {!isEditing && users.length > 0 && (
-             <div className="flex items-center gap-3">
-                 <span className="text-xs text-zinc-500 font-medium">{selectedCount} Selected</span>
-                 <button onClick={toggleSelectAll} className="flex items-center space-x-2 text-xs group">
-                     <span className="text-zinc-400 group-hover:text-zinc-200 transition-colors">全選</span>
-                     <div className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center transition-colors ${allSelected ? 'bg-blue-500 border-blue-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>
-                       {allSelected && <Check size={12} className="text-white" />}
-                     </div>
-                 </button>
-             </div>
-          )}
-        </div>
-
-        {/* Users List */}
-        <div className="flex flex-col gap-2">
-          {users.length === 0 ? (
-             <div className="text-center py-20 text-zinc-600 border-2 border-dashed border-zinc-800 rounded-xl">
-               <p className="text-lg mb-2">👋 Welcome to OneScan</p>
-               <p className="text-sm">點擊右上角的 + 新增同學帳號</p>
-             </div>
-          ) : (
-            users.map(user => (
-              <UserRow 
-                key={user.id} 
-                user={user} 
-                isEditing={isEditing}
-                onToggle={handleToggleUser}
-                onDelete={handleDeleteUser}
-              />
-            ))
-          )}
-        </div>
-
-        {/* Add Modal */}
         {showAddModal && (
-          <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-[#18181b] border border-zinc-700 w-full max-w-sm rounded-2xl p-6">
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#18181b] border border-zinc-700 w-full max-w-sm rounded-2xl p-6 shadow-2xl">
               <h2 className="text-xl font-bold text-white mb-4">新增帳號</h2>
               <form onSubmit={handleConfirmAddUser} className="space-y-4">
                 <div>
@@ -473,7 +502,7 @@ const App: React.FC = () => {
     if (scanState === ScanState.PROCESSING) {
       borderColor = "border-yellow-400";
       overlay = (
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-20">
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-20 pointer-events-none">
           <div className="w-16 h-16 border-4 border-t-blue-500 border-blue-200 rounded-full animate-spin mb-4"></div>
           <p className="text-white font-semibold animate-pulse">連線中...</p>
         </div>
@@ -503,37 +532,35 @@ const App: React.FC = () => {
     }
 
     return (
-      <div className="relative h-full w-full bg-black flex flex-col overflow-hidden">
-        
-        {/* 
-           🔥 修正：相機容器 
-           1. 加上 overflow-hidden 防止撐開頁面
-           2. 內層 video 透過 CSS class 強制覆蓋
-        */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black">
-             {/* 這裡的 id="reader" 是給套件用的，我們透過 css 修正它的 style */}
+      <div 
+        className="relative w-full bg-black flex flex-col overflow-hidden" 
+        style={{ height: '100dvh' }}
+      >
+        <div 
+            className="absolute inset-0 flex items-center justify-center bg-black touch-none"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+        >
              <div 
                 id="reader" 
                 className="w-full h-full"
                 style={{
-                    // 這裡用 CSS 變焦 (Digital Zoom)
                     transform: `scale(${zoomLevel})`,
                     transformOrigin: 'center center',
-                    transition: 'transform 0.1s ease-out'
+                    transition: initialPinchDistance.current ? 'none' : 'transform 0.1s ease-out'
                 }}
              ></div>
              
-             {/* 強制覆寫 html5-qrcode 產生的 video 樣式，讓它填滿螢幕但不變形 */}
              <style>{`
                 #reader video {
                     width: 100% !important;
                     height: 100% !important;
-                    object-fit: cover !important; /* 關鍵：像原生相機一樣填滿 */
+                    object-fit: cover !important; 
                 }
              `}</style>
         </div>
 
-        {/* 掃描框 UI (方框) - 保持不變，因為這是你的自定義 UI */}
         <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
             <div className={`relative w-64 h-64 border-2 ${borderColor} rounded-3xl shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]`}>
                 {scanState === ScanState.IDLE && (
@@ -551,13 +578,12 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Zoom Slider (修正範圍 1-5) */}
         {scanState === ScanState.IDLE && (
-            <div className="absolute bottom-24 left-0 right-0 z-20 px-8 flex flex-col items-center">
+            <div className="absolute bottom-24 left-0 right-0 z-20 px-8 flex flex-col items-center pointer-events-auto">
                 <div className="flex items-center space-x-4 w-full max-w-xs bg-black/40 backdrop-blur-md rounded-full px-4 py-2 border border-white/10">
                     <ZoomOut size={16} className="text-zinc-300" />
                     <input 
-                        type="range" min="1" max="5" step="0.1"  // 🔥 修改：最大放大 5 倍
+                        type="range" min="1" max="5" step="0.1" 
                         value={zoomLevel}
                         onChange={(e) => applyZoom(parseFloat(e.target.value))}
                         className="w-full h-1 bg-zinc-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
@@ -570,7 +596,7 @@ const App: React.FC = () => {
             </div>
         )}
 
-        <button onClick={handleReturnHome} className="absolute top-6 right-6 p-2 bg-black/40 rounded-full text-white z-30 backdrop-blur-sm active:scale-90 transition-transform">
+        <button onClick={handleReturnHome} className="absolute top-6 right-6 p-2 bg-black/40 rounded-full text-white z-30 backdrop-blur-sm active:scale-90 transition-transform pointer-events-auto">
             <X size={24} />
         </button>
       </div> 
@@ -578,7 +604,6 @@ const App: React.FC = () => {
   };
 
   const renderSettings = () => (
-    // 配色：改為 Zinc 900
     <div className="flex flex-col h-full pt-12 px-6 pb-24 bg-[#18181b]">
       <h1 className="text-2xl font-bold text-white mb-8">設定</h1>
       <div className="bg-[#27272a] border border-zinc-800 rounded-xl p-4 space-y-4">
@@ -600,8 +625,7 @@ const App: React.FC = () => {
   );
 
   return (
-    // 配色：主背景設為 Zinc 950
-    <div className="h-screen w-screen bg-[#09090b] text-zinc-100 flex flex-col font-sans overflow-hidden">
+    <div className="w-screen bg-[#09090b] text-zinc-100 flex flex-col font-sans overflow-hidden" style={{ height: '100dvh' }}>
       <main className="flex-1 relative overflow-hidden">
         {activeTab === 'home' && renderHome()}
         {activeTab === 'scan' && renderScan()}
