@@ -54,6 +54,79 @@ const App: React.FC = () => {
   const [newUserId, setNewUserId] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
 
+ // start camera when entering scan tab
+  useEffect(() => {
+    // 只有在切換到 'scan' 分頁且掃描狀態是 IDLE 時才啟動
+    if (activeTab === 'scan' && scanState === ScanState.IDLE) {
+      
+      // 延遲 300ms 啟動，確保 HTML 元素 "reader" 已經長出來了
+      const timeoutId = setTimeout(() => {
+        // 防止重複初始化
+        if (!scannerRef.current) {
+            try {
+                // @ts-ignore
+                const html5QrCode = new Html5Qrcode("reader");
+                scannerRef.current = html5QrCode;
+            } catch (e) {
+                console.error("初始化失敗", e);
+            }
+        }
+
+        const config = { 
+            fps: 10, 
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0 
+        };
+        
+        // 關鍵：使用 facingMode: "environment" 強制使用後鏡頭
+        if (!isScannerRunning.current && scannerRef.current) {
+            isScannerRunning.current = true;
+            scannerRef.current.start(
+                { facingMode: "environment" }, 
+                config,
+                (decodedText: string) => {
+                    // 掃描成功，呼叫下面定義的 handleScanSuccess
+                    // 注意：這裡直接呼叫可能會因為閉包問題拿到舊 state，但對於觸發事件夠用了
+                    handleScanSuccess(decodedText);
+                },
+                (errorMessage: string) => {
+                    // 掃描失敗（沒掃到）是正常的，不用處理
+                }
+            ).catch((err: any) => {
+                console.error("相機啟動失敗", err);
+                isScannerRunning.current = false;
+                setScanError("無法啟動相機，請確認權限 (請使用 Safari/Chrome)");
+            });
+        }
+      }, 300); 
+
+      return () => clearTimeout(timeoutId);
+    } else {
+      // 如果離開 scan 分頁，要關閉相機
+      if (scannerRef.current && isScannerRunning.current) {
+          scannerRef.current.stop().then(() => {
+              scannerRef.current.clear();
+              isScannerRunning.current = false;
+          }).catch((err: any) => {
+              console.warn("停止相機失敗", err);
+              isScannerRunning.current = false;
+          });
+      }
+    }
+    
+    // Cleanup function: 當組件卸載時，確保相機關閉
+    return () => {
+        if (scannerRef.current && isScannerRunning.current) {
+            isScannerRunning.current = false;
+            scannerRef.current.stop().catch(() => {}).finally(() => {
+                scannerRef.current.clear().catch(() => {});
+            });
+        }
+    };
+  }, [activeTab, scanState]); 
+
+
+
   // -- User Actions --
 
   const handleToggleUser = (id: string) => {

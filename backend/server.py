@@ -66,7 +66,7 @@ def _check_session_valid(user_id: str) -> bool:
 def _perform_login_checkin(user_id: str, password: str, qr_data: str) -> requests.Session | None:
     s = requests.Session()
 
-    # 判斷動作類型 (用於顯示 Log)
+    # 判斷動作類型
     action_name = "打卡" if qr_data else "登入"
 
     real_major = ''
@@ -113,42 +113,46 @@ def _perform_login_checkin(user_id: str, password: str, qr_data: str) -> request
             verify=False 
         )
         
-        # 🔥 Step 4: 嚴格判斷結果 (包含跳轉後檢查)
+        # 🔥 Step 4: 依照截圖進行嚴格判斷 🔥
         if response.status_code == 302:
-            # 取得跳轉網址 (通常是 /clockin/ClassClockinRecord.aspx)
             redirect_path = response.headers.get('Location')
             
-            # 如果只是單純登入，拿到 302 就算成功，不用檢查後面
+            # 如果是「純登入」模式，只要 302 就當作成功
             if not qr_data:
                 print(f"✅ [{user_id}] 登入驗證成功！ (302 Redirect)")
                 return s
             
-            # --- 以下是「打卡」的嚴格檢查邏輯 ---
-            print(f"[{user_id}] 302 跳轉成功，正在檢查結果頁面內容...")
+            # --- 打卡模式：追蹤結果頁面 ---
+            print(f"[{user_id}] 伺服器接受請求，正在檢查結果頁面關鍵字...")
             
-            # 追蹤跳轉 (帶著剛拿到的 Cookie 去訪問結果頁)
             target_url = BASE_HOST + redirect_path if redirect_path.startswith('/') else redirect_path
             result_page = s.get(target_url, headers=APP_GET_HEADERS, verify=False)
+            page_content = result_page.text
+
+            # 🛑 判斷邏輯更新 (根據你的截圖) 🛑
             
-            # 檢查頁面中是否有失敗關鍵字
-            # 常見失敗： "非點名時間", "無效的代碼", "請回首頁"
-            # 注意：這裡要根據實際 HTML 調整，但通常檢查紅色字體最準
-            
-            if "非點名時間" in result_page.text:
-                print(f"⚠️ [{user_id}] 打卡失敗：非點名時間 (過期 QR)")
-                return None
-            elif "無效" in result_page.text:
-                print(f"⚠️ [{user_id}] 打卡失敗：無效代碼")
-                return None
-            elif "請回首頁開啟" in result_page.text and "打卡成功" not in result_page.text:
-                 # 有時候學校會顯示一大串，要小心誤判，通常沒顯示成功就是失敗
-                 # 這裡做一個寬鬆判斷：如果有紅字警告通常就是失敗
-                 print(f"⚠️ [{user_id}] 打卡失敗：伺服器未顯示成功訊息")
-                 return None
-            else:
-                # 沒發現錯誤，那就是真的成功了
-                print(f"✅ [{user_id}] 打卡確認成功！ (已驗證結果頁)")
+            # 1. 優先檢查成功關鍵字
+            if "登錄成功" in page_content or "打卡成功" in page_content:
+                # 這裡還可以進一步抓取課程名稱 (選做)
+                print(f"✅ [{user_id}] 打卡確認成功！(偵測到'登錄成功')")
                 return s
+            
+            # 2. 檢查具體失敗原因 (讓前端顯示更清楚)
+            elif "QRCode錯誤" in page_content:
+                print(f"⚠️ [{user_id}] 打卡失敗：QRCode錯誤 (過期或無效)")
+                return None
+            elif "非點名時間" in page_content:
+                print(f"⚠️ [{user_id}] 打卡失敗：非點名時間")
+                return None
+            elif "無效" in page_content:
+                print(f"⚠️ [{user_id}] 打卡失敗：代碼無效")
+                return None
+            else:
+                # 3. 如果沒看到成功，也沒看到已知失敗，為了安全起見，判定為失敗
+                print(f"⚠️ [{user_id}] 打卡失敗：未見成功訊息 (可能是未知錯誤)")
+                # 可以把這時候的 HTML 印出來除錯
+                # print(page_content[:500]) 
+                return None
             
         elif response.status_code == 200:
             print(f"❌ [{user_id}] {action_name}失敗 (Status 200, 帳密錯誤或被擋)")
