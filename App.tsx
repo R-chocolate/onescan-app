@@ -83,19 +83,20 @@ const App: React.FC = () => {
             } catch (e) { console.error("Init failed", e); }
         }
 
-        const config = { 
-            fps: 15,
-            qrbox: { width: 300, height: 300 }, 
-            useBarCodeDetectorIfSupported: true,
+            const config = { 
+            fps: 10, // 降低 FPS 有助於讓處理器有更多效能處理畫質
+            qrbox: { width: 250, height: 250 }, 
+            useBarCodeDetectorIfSupported: true, // 這行很重要，會嘗試使用瀏覽器內建的原生偵測 API
             videoConstraints: {
-                facingMode: "environment", 
-                width: { min: 1920, ideal: 3840, max: 4096 }, 
-                height: { min: 1080, ideal: 2160, max: 2160 },
-                aspectRatio: { ideal: 1.7777777778 },
+                facingMode: "environment",
+                // 修正：不要設定 min，改用 ideal。
+                // 手機直向掃描時，Width 通常是短邊 (1080)，Height 是長邊 (1920)
+                width: { ideal: 1920 }, 
+                height: { ideal: 1080 },
+                // 移除固定的 aspectRatio，讓瀏覽器自己決定全螢幕
                 advanced: [
-                    { focusMode: "continuous" },
-                    { exposureMode: "continuous" },
-                    { whiteBalanceMode: "continuous" }
+                    { focusMode: "continuous" }, // 嘗試開啟連續對焦
+                    { zoom: 1.0 } 
                 ]
             }
         };
