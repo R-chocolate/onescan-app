@@ -83,7 +83,7 @@ const App: React.FC = () => {
             useBarCodeDetectorIfSupported: true,
             videoConstraints: {
                 facingMode: "environment", 
-                width: { min: 1280, ideal: 3840, max: 4096 }, 
+                width: { min: 1280, ideal: 3840, max: 4096 }, // 4K 支援
                 height: { min: 720, ideal: 2160, max: 2160 },
                 advanced: [
                     { focusMode: "continuous" },
@@ -162,7 +162,7 @@ const App: React.FC = () => {
 
   // -- Actions --
   const handleToggleUser = (id: string) => {
-    // 切換 Toggle 時，我們清空「打卡結果」，代表使用者準備重新操作
+    // 切換 Toggle 時，清空「打卡結果」，以便重新打卡
     setUsers(prev => prev.map(u => 
       u.id === id ? { ...u, isSelected: !u.isSelected, checkinStatus: null } : u
     ));
@@ -190,6 +190,7 @@ const App: React.FC = () => {
     setShowAddModal(false);
   };
   
+  // 強制登入
   const handleBatchLogin = async () => {
     const usersToLogin = users.filter(u => !u.isLoggedIn || u.status === UserStatus.FAILED || u.status === UserStatus.PENDING);
     if (usersToLogin.length === 0) {
@@ -221,6 +222,7 @@ const App: React.FC = () => {
     }
   };
 
+  // 下拉刷新
   const handleCheckStatus = async () => {
     const loggedInUsers = users.filter(u => u.isLoggedIn);
     if (loggedInUsers.length === 0) {
@@ -262,7 +264,6 @@ const App: React.FC = () => {
   const toggleEditMode = () => setIsEditing(!isEditing);
 
   const handleReturnHome = () => {
-    // 這裡我們只取消 isSelected，但保留 checkinStatus (綠勾/紅叉) 讓使用者看結果
     setUsers(prev => prev.map(u => ({ ...u, isSelected: false }))); 
     setScanState(ScanState.IDLE);
     setScanError(null);
@@ -296,9 +297,9 @@ const App: React.FC = () => {
           const result = response.results.find(r => r.id === u.id);
           if (result) {
               const isSuccess = result.status === 'SUCCESS';
-              // 🔥 核心修正：只更新 checkinStatus (Toggle 左邊的方框)，不影響 status (最左邊的圓圈)
               return { 
                   ...u, 
+                  // 🔥 只更新 Toggle 左邊的方框
                   checkinStatus: isSuccess ? 'SUCCESS' : 'FAILED', 
                   message: result.message, 
                   lastCheckinSuccess: isSuccess ? Date.now() : u.lastCheckinSuccess 
@@ -454,7 +455,7 @@ const App: React.FC = () => {
               {users.length === 0 ? <div className="text-center py-20 text-zinc-600 border-2 border-dashed border-zinc-800 rounded-xl"><p className="text-lg mb-2">👋 Welcome to OneScan</p><p className="text-sm">點擊右上角的 + 新增同學帳號</p></div> : users.map(user => <UserRow key={user.id} user={user} isEditing={isEditing} onToggle={handleToggleUser} onDelete={handleDeleteUser} />)}
             </div>
         </div>
-        {showAddModal && <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"><div className="bg-[#18181b] border border-zinc-700 w-full max-w-sm rounded-2xl p-6 shadow-2xl"><h2 className="text-xl font-bold text-white mb-4">新增帳號</h2><form onSubmit={handleConfirmAddUser} className="space-y-4"><div><label className="block text-xs text-zinc-400 mb-1">Account / NID帳號</label><input type="text" value={newUserId} onChange={e => setNewUserId(e.target.value)} className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="例如：D1234567" autoFocus /></div><div><label className="block text-xs text-zinc-400 mb-1">Password / NID密碼</label><input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••" /></div><div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 rounded-xl bg-zinc-800 text-zinc-300">取消</button><button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold">新增</button></div></form></div></div>}
+        {showAddModal && <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"><div className="bg-[#18181b] border border-zinc-700 w-full max-w-sm rounded-2xl p-6 shadow-2xl"><h2 className="text-xl font-bold text-white mb-4">新增帳號</h2><form onSubmit={handleConfirmAddUser} className="space-y-4"><div><label className="block text-xs text-zinc-400 mb-1">Account / NID帳號</label><input type="text" value={newUserId} onChange={e => setNewUserId(e.target.value)} className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="D1234567" autoFocus /></div><div><label className="block text-xs text-zinc-400 mb-1">Password / NID密碼</label><input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••" /></div><div className="flex gap-3 pt-4"><button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 rounded-xl bg-zinc-800 text-zinc-300">取消</button><button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold">新增</button></div></form></div></div>}
       </div>
     );
   };
