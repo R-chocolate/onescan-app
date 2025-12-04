@@ -40,7 +40,7 @@ const App: React.FC = () => {
 
   // [修正] 這裡直接寫死，不使用 useState，也不讀取 localStorage
   // 這樣就解決了 "setApiEndpoint not found" 的錯誤，也保證連線正確
-  const apiEndpoint = 'https://fcu-backend-290830858385.asia-east1.run.app';
+  const apiEndpoint = 'https://fcu-backend-576675046342.asia-east1.run.app';
   
   // -- Camera State --
   const scannerRef = useRef<any>(null); 

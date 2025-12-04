@@ -1,7 +1,10 @@
 npm run dev 
 ctrl shift p -> simple browser -> localhost
 
-GCP URL:https://fcu-backend-290830858385.asia-east1.run.app
+GCP URL:https://fcu-backend-576675046342.asia-east1.run.app
+GCP 後端部屬:gcloud run deploy fcu-backend --source .
+選asia-east1 都yes
+
 
 推送到github
 git add .
