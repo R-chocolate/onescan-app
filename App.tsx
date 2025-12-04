@@ -1,4 +1,3 @@
-// --- START OF FILE src/App.tsx ---
 import React, { useState, useEffect, useRef } from 'react';
 import { BottomNav } from './components/BottomNav';
 import { UserRow } from './components/UserRow';
@@ -38,14 +37,10 @@ const App: React.FC = () => {
 
   const [scanState, setScanState] = useState<ScanState>(ScanState.IDLE);
   const [scanError, setScanError] = useState<string | null>(null);
-  const [apiEndpoint, setApiEndpoint] = useState(() => {
-      const saved = localStorage.getItem('onescan_api_url');
-      return saved || 'https://fcu-backend-290830858385.asia-east1.run.app';
-  });
 
-  useEffect(() => {
-    localStorage.setItem('onescan_api_url', apiEndpoint);
-  }, [apiEndpoint]);
+  // [修正] 這裡直接寫死，不使用 useState，也不讀取 localStorage
+  // 這樣就解決了 "setApiEndpoint not found" 的錯誤，也保證連線正確
+  const apiEndpoint = 'https://fcu-backend-290830858385.asia-east1.run.app';
   
   // -- Camera State --
   const scannerRef = useRef<any>(null); 
@@ -579,11 +574,21 @@ const App: React.FC = () => {
     );
   };
 
+  // [修正] Settings 頁面改為唯讀，不再嘗試修改 apiEndpoint
   const renderSettings = () => (
     <div className="flex flex-col h-full pt-12 px-6 pb-24 bg-[#18181b]">
       <h1 className="text-2xl font-bold text-white mb-8">設定</h1>
       <div className="bg-[#27272a] border border-zinc-800 rounded-xl p-4 space-y-4">
-          <div><label className="block text-xs text-zinc-400 mb-1">API Endpoint</label><input type="text" value={apiEndpoint} onChange={(e) => setApiEndpoint(e.target.value)} className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" /></div>
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1">API Endpoint</label>
+            {/* 這裡把 onChange 拿掉了，並加上 readOnly */}
+            <input 
+                type="text" 
+                value={apiEndpoint} 
+                readOnly
+                className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-zinc-400 text-sm focus:outline-none cursor-not-allowed" 
+            />
+          </div>
           <div className="flex items-center space-x-2"><div className="w-2 h-2 rounded-full bg-green-500"></div><span className="text-xs text-zinc-400">Ready</span></div>
       </div>
     </div>
