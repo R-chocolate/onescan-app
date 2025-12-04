@@ -13,3 +13,25 @@ WebApp架構
 多執行緒 (Multi-threading) 或 非同步 (Asyncio) 同時發送 POST 請求：
 Payload: { token: "...", lat: 24.17..., lng: 120.64..., student_id: "..." }
 回傳結果給前端：A同學成功、B同學成功...
+
+
+const renderLoginStatusCircle = () => {
+    switch (user.status) {
+      case UserStatus.PROCESSING:
+        return <Loader2 className="w-5 h-5 text-yellow-500 animate-spin" />;
+      case UserStatus.SUCCESS:
+        return (
+          <div className="w-5 h-5 border-2 border-green-500/80 rounded-full flex items-center justify-center">
+            <Check className="w-3 h-3 text-green-500/90" />
+          </div> 
+        );
+      case UserStatus.FAILED:
+        return (
+          <div className="w-5 h-5 border-2 border-red-500/80 rounded-full flex items-center justify-center">
+            <X className="w-3 h-3 text-red-500/90" />
+          </div>
+        );
+      default:
+        return <div className="w-5 h-5 border-2 border-zinc-600 rounded-full" />;
+    }
+  };

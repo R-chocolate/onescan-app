@@ -422,8 +422,11 @@ const App: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center justify-between mb-4 px-1">
-              <h2 className="text-xs font-semibold text-zinc-500 uppercase">帳號列表 / 登入狀態</h2>
-              {!isEditing && users.length > 0 && <div className="flex items-center gap-3"><span className="text-xs text-zinc-500 font-medium">{selectedCount} Selected</span><button onClick={toggleSelectAll} className="flex items-center space-x-2 text-xs group"><span className="text-zinc-400 group-hover:text-zinc-200 transition-colors">全選</span><div className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center transition-colors ${allSelected ? 'bg-blue-500 border-blue-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>{allSelected && <Check size={12} className="text-white" />}</div></button></div>}
+              <h2 className="text-xs font-semibold text-zinc-500 uppercase">登入狀態 / 帳號列表</h2>
+              <span className="text-[10px] text-zinc-600 font-normal border border-zinc-800 rounded px-1.5 py-0.5">
+               長按查看紀錄
+              </span>
+              {!isEditing && users.length > 0 && <div className="flex items-center gap-3"><span className="text-xs text-zinc-500 font-medium">{selectedCount} Selected</span><button onClick={toggleSelectAll} className="flex items-center space-x-2 text-xs group"><span className="text-zinc-400 group-hover:text-zinc-200 transition-colors">All</span><div className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center transition-colors ${allSelected ? 'bg-blue-500 border-blue-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>{allSelected && <Check size={12} className="text-white" />}</div></button></div>}
             </div>
             <div className="flex flex-col gap-2">
               {users.length === 0 ? <div className="text-center py-20 text-zinc-600 border-2 border-dashed border-zinc-800 rounded-xl"><p className="text-lg mb-2">👋 Welcome to OneScan</p><p className="text-sm">點擊右上角的 + 新增同學帳號</p></div> : 
@@ -456,7 +459,14 @@ const App: React.FC = () => {
                 <div className="flex items-center justify-between mb-6">
                     <div>
                         <h2 className="text-xl font-bold text-white">{historyUser.name}</h2>
-                        <p className="text-xs text-zinc-400 mt-1">打卡紀錄</p>
+                        {/*<p className="text-xs text-zinc-400 mt-1">打卡紀錄</p>*/}
+                        <div className="mt-2 inline-flex items-center px-2.5 py-1 rounded-full bg-zinc-800 border border-zinc-700">
+                            <span className="text-[11px] text-zinc-300 font-medium tracking-wide">
+                                📅 打卡紀錄
+                            </span>
+                        </div>
+
+
                     </div>
                     <button onClick={closeHistoryModal} className="p-2 bg-zinc-800 rounded-full text-zinc-400">
                         <X size={20} />

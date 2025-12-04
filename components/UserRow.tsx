@@ -1,8 +1,7 @@
 // --- START OF FILE src/components/UserRow.tsx ---
 import React, { useRef } from 'react';
 import { User, UserStatus } from '../types';
-import { Check, X, Loader2 } from 'lucide-react';
-
+import { Check, X, Loader2, Trash2Icon } from 'lucide-react';
 interface UserRowProps {
   user: User;
   isEditing: boolean;
@@ -131,7 +130,7 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
             onClick={(e) => { e.stopPropagation(); onDelete(user.id); }}
             className="w-8 h-8 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center"
           >
-            <X size={16} />
+            <Trash2Icon size={15} />
           </button>
         ) : (
           <div 
