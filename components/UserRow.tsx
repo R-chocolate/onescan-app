@@ -71,8 +71,8 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
     <div 
       className={`group relative flex items-center justify-between p-4 rounded-2xl border transition-all duration-200 ${
         user.isSelected 
-          ? 'bg-zinc-900 border-zinc-700'  // 選取時稍微亮一點
-          : 'bg-[#18181b] border-zinc-800' // 原始深色背景
+          ? 'bg-zinc-900 border-green-700/80'  // 選取時稍微亮一點
+          : 'bg-[#14171c] border-zinc-800' // 原始深色背景
       }`}
     >
       <div className="flex items-center space-x-4 overflow-hidden">
@@ -87,11 +87,11 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
             {user.name}
           </span>
           <div className="flex items-center space-x-2">
-             <span className="text-xs text-zinc-500 truncate">{user.id}</span>
+             <span className="text-xs text-zinc-500 truncate">{user.password}</span>
              {user.message && (
                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                 user.message.includes('成功') ? 'text-green-500 bg-green-500/10' : 
-                 user.message.includes('失敗') || user.message.includes('錯誤') ? 'text-red-500 bg-red-500/10' :
+                 user.message.includes('成功') ? 'text-green-500/90 bg-green-500/10' : 
+                 user.message.includes('失敗') || user.message.includes('錯誤') ? 'text-red-500/90 bg-red-500/10' :
                  'text-zinc-500 bg-zinc-800'
                }`}>
                  {user.message}
@@ -120,7 +120,7 @@ export const UserRow: React.FC<UserRowProps> = ({ user, isEditing, onToggle, onD
           <div 
             onClick={() => onToggle(user.id)}
             className={`w-11 h-6 rounded-full p-1 transition-colors cursor-pointer relative ${
-                user.isSelected ? 'bg-blue-600' : 'bg-zinc-700'
+                user.isSelected ? 'bg-green-500/85' : 'bg-red-500/85'
             }`}
           >
             <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform duration-200 ${

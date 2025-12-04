@@ -443,7 +443,7 @@ const App: React.FC = () => {
               <span className="absolute right-0 -top-4 text-[10px] text-zinc-600 font-medium tracking-wide">建議用瀏覽器開啟</span>
               <div className="flex items-center space-x-2">
                 {!isEditing && <button onClick={() => handleBatchLogin()} className="w-10 h-10 bg-[#18181b] rounded-full text-zinc-300 flex items-center justify-center shadow-lg active:scale-95 transition-transform"><RotateCcw size={18} /></button>}
-                <button onClick={toggleEditMode} className={`flex items-center space-x-1 px-3 py-2 rounded-lg transition-colors ${isEditing ? 'bg-blue-600 text-white' : 'bg-[#18181b] text-zinc-300 shadow-md'}`}>{isEditing ? <Check size={18} /> : <Edit2 size={18} />}<span className="text-xs font-medium">{isEditing ? '完成' : 'Edit'}</span></button>
+                <button onClick={toggleEditMode} className={`flex items-center space-x-1 px-3 py-2 rounded-lg transition-colors ${isEditing ? 'bg-blue-600 text-white' : 'bg-[#18181b] text-zinc-300 shadow-md'}`}>{isEditing ? <Check size={18} /> : <Edit2 size={18} />}<span className="text-xs font-medium">{isEditing ? 'Done' : 'Edit'}</span></button>
                 <button onClick={handleOpenAddModal} className="p-2 bg-blue-600 rounded-full text-white shadow-lg active:scale-95 transition-transform"><Plus size={24} /></button>
               </div>
             </div>
