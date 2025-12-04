@@ -37,6 +37,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
       </div>
 
       {/* Right: Settings */}
+      {/*  
       <button
         onClick={() => onTabChange('settings')}
         className={`flex flex-col items-center justify-center w-16 h-full space-y-1 transition-colors ${
@@ -46,6 +47,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
         <Settings size={24} />
         <span className="text-xs font-medium">Settings</span>
       </button>
+      */}
     </div>
   );
 };

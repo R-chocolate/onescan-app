@@ -36,7 +36,7 @@ const App: React.FC = () => {
   
   // -- App Settings (也是從 LocalStorage 讀取) --
   const [apiEndpoint, setApiEndpoint] = useState(() => {
-    return localStorage.getItem('onescan_api_url') || 'https://fcu-backend-290830858385.asia-east1.run.app';
+    return 'https://fcu-backend-290830858385.asia-east1.run.app'; //localStorage.getItem('onescan_api_url') || 
   });
 
   useEffect(() => {
