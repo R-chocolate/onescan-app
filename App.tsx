@@ -47,6 +47,21 @@ const qrScannerRef = useRef<QrScanner | null>(null); // 用來存放掃描器實
   // [修正] 這裡直接寫死，不使用 useState，也不讀取 localStorage
   // 這樣就解決了 "setApiEndpoint not found" 的錯誤，也保證連線正確
   const apiEndpoint = 'https://fcu-backend-576675046342.asia-east1.run.app';
+
+  useEffect(() => {
+    // 定義一個喚醒後端的函式
+    const wakeUpBackend = () => {
+      // 使用 fetch 發送一個簡單的 GET 請求
+      // mode: 'no-cors' 允許跨域發送（我們不關心回傳內容，只要發送出去就好）
+      fetch(apiEndpoint + '/', { method: 'GET', mode: 'no-cors' })
+        .then(() => console.log("🔥 Backend wake-up signal sent!"))
+        .catch(err => console.log("Wake-up signal error (normal if cold start):", err));
+    };
+
+    // 執行喚醒
+    wakeUpBackend();
+  }, []); // 空陣列 [] 代表只在網頁剛開啟時執行一次
+
   
   // -- Camera State --
   const scannerRef = useRef<any>(null); 
