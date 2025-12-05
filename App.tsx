@@ -25,7 +25,7 @@ import {
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('home');
-  
+  const isProcessingRef = useRef(false); // 🔒 新增這把同步鎖
 
  // 在 App 開頭的變數宣告區
 const videoRef = useRef<HTMLVideoElement>(null); // 用來綁定 <video> 標籤
@@ -54,7 +54,7 @@ const qrScannerRef = useRef<QrScanner | null>(null); // 用來存放掃描器實
       // 使用 fetch 發送一個簡單的 GET 請求
       // mode: 'no-cors' 允許跨域發送（我們不關心回傳內容，只要發送出去就好）
       fetch(apiEndpoint + '/', { method: 'GET', mode: 'no-cors' })
-        .then(() => console.log("🔥 Backend wake-up signal sent!"))
+        .then(() => console.log(" Backend wake-up signal sent!"))
         .catch(err => console.log("Wake-up signal error (normal if cold start):", err));
     };
 
@@ -283,13 +283,18 @@ const qrScannerRef = useRef<QrScanner | null>(null); // 用來存放掃描器實
   };
 
   const handleScanSuccess = async (decodedText: string) => {
-    if (scanState !== ScanState.IDLE) return; 
+    // 🔒 [關鍵修正] 使用 Ref 同步檢查，如果正在處理就直接擋掉
+    if (isProcessingRef.current || scanState !== ScanState.IDLE) return;
+    
     const selectedUsers = users.filter(u => u.isSelected);
     if (selectedUsers.length === 0) {
       setScanError("未選取任何帳號");
       setTimeout(() => setScanError(null), 2000);
       return;
     }
+    
+    // 🔒 立即上鎖
+    isProcessingRef.current = true;
     
     try { if (scannerRef.current) scannerRef.current.pause(); } catch (e) {}
     setScanError(null);
@@ -318,12 +323,13 @@ const qrScannerRef = useRef<QrScanner | null>(null); // 用來存放掃描器實
         let finalState = failedCount === 0 ? ScanState.RESULT_SUCCESS : ScanState.RESULT_PARTIAL;
         setScanState(finalState);
         
-        if (finalState === ScanState.RESULT_SUCCESS || finalState === ScanState.RESULT_PARTIAL) {
-            setTimeout(() => {
-                setScanState(ScanState.IDLE);
-                try { if (scannerRef.current) scannerRef.current.resume(); } catch (e) {}
-            }, 3000);
-        }
+        // 顯示結果 3 秒後重置
+        setTimeout(() => {
+            setScanState(ScanState.IDLE);
+            isProcessingRef.current = false; // 🔓 解鎖
+            try { if (scannerRef.current) scannerRef.current.resume(); } catch (e) {}
+        }, 3000);
+
     } catch (e) {
         setUsers(prev => prev.map(u => u.isSelected ? { 
             ...u, 
@@ -333,6 +339,7 @@ const qrScannerRef = useRef<QrScanner | null>(null); // 用來存放掃描器實
         } : u));
         setScanError("API 請求錯誤");
         setScanState(ScanState.IDLE);
+        isProcessingRef.current = false; // 🔓 出錯也要解鎖
     }
   };
 
